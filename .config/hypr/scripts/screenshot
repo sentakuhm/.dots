@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# Screenshot script for Hyprland
+# @sentakuhm
+
+set -euo pipefail
+
+# === Config ===
+ICON_DIR="/usr/share/icons/Papirus-Dark/128x128/apps"
+DIR="$(xdg-user-dir PICTURES)/Screenshots"
+TIME=$(date "+%d-%b_%H-%M-%S")
+FILE="Screenshot_${TIME}.png"
+
+mkdir -p "$DIR"
+
+# === Notifications ===
+notify() {
+    local msg="$1"
+    local icon="${2:-$ICON_DIR/applets-screenshooter.svg}"
+    notify-send -h string:x-canonical-private-synchronous:shot-notify \
+        -t 2500 -i "$icon" "Screenshot" "$msg"
+}
+
+notify_view() {
+    local type="${1:-normal}"
+    local filepath="$DIR/$FILE"
+
+    if [[ "$type" == "active" ]]; then
+        filepath="$active_window_path"
+    fi
+
+    if [[ -f "$filepath" ]]; then
+        notify "Saved: $(basename "$filepath")"
+        # Optional: open the image
+        # xdg-open "$filepath" &
+    else
+        notify "Screenshot failed"
+    fi
+}
+
+# === Countdown ===
+countdown() {
+    local sec=$1
+    for ((i=sec; i>0; i--)); do
+        notify-send -h string:x-canonical-private-synchronous:shot-notify \
+            -t 1000 -i "$ICON_DIR/timer.png" "Taking shot in: $i"
+        sleep 1
+    done
+}
+
+# === Shot functions ===
+shotnow() {
+    grim - | tee "$DIR/$FILE" | wl-copy
+    notify_view
+}
+
+shot5() {
+    countdown 5
+    sleep 0.5
+    grim - | tee "$DIR/$FILE" | wl-copy
+    notify_view
+}
+
+shot10() {
+    countdown 10
+    sleep 0.5
+    grim - | tee "$DIR/$FILE" | wl-copy
+    notify_view
+}
+
+shotarea() {
+    local geometry
+    geometry=$(slurp) || exit 0   # user cancelled
+
+    grim -g "$geometry" - | tee "$DIR/$FILE" | wl-copy
+    notify_view
+}
+
+shotactive() {
+    local geometry
+    geometry=$(hyprctl -j activewindow | jq -r '"\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"')
+
+    local class
+    class=$(hyprctl -j activewindow | jq -r '.class')
+    active_window_path="$DIR/Screenshot_${TIME}_${class}.png"
+
+    grim -g "$geometry" "$active_window_path"
+    wl-copy < "$active_window_path"
+    notify_view "active"
+}
+
+shotwin() {
+    # Same as shotactive (cleaner)
+    shotactive
+}
+
+shotsatty() {
+    local tmpfile
+    tmpfile=$(mktemp /tmp/screenshot-XXXXXX.png)
+
+    local geometry
+    geometry=$(slurp) || { rm -f "$tmpfile"; exit 0; }
+
+    grim -g "$geometry" "$tmpfile"
+    satty -f "$tmpfile"
+    rm -f "$tmpfile"
+}
+
+# === Main ===
+case "${1:-}" in
+    --now)     shotnow ;;
+    --in5)     shot5 ;;
+    --in10)    shot10 ;;
+    --win)     shotwin ;;
+    --area)    shotarea ;;
+    --active)  shotactive ;;
+    --satty)   shotsatty ;;
+    *)
+        echo "Available options: --now --in5 --in10 --win --area --active --satty"
+        exit 1
+        ;;
+esac

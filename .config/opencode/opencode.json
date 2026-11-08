@@ -1,0 +1,101 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "shell": "/bin/zsh",
+  "model": "strata/strata",
+  "provider": {
+    "llamacpp": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "llama.cpp (local)",
+      "options": {
+        "baseURL": "http://127.0.0.1:9931/v1"
+      },
+      "models": {
+        "qwen3.8-27b-iq3s": {
+          "name": "Qwen3.8 27B GSQ-RCO IQ3_S (local)",
+          "tool_call": true,
+          "limit": {
+            "context": 128000,
+            "output": 32768
+          }
+        },
+        "qwen3.8-27b-iq3xxs": {
+          "name": "Qwen3.8 27B GSQ-RCO IQ3_XXS (local)",
+          "tool_call": true,
+          "limit": {
+            "context": 128000,
+            "output": 32768
+          }
+        },
+        "qwen3.8-27b-turbo": {
+          "name": "Qwen3.8-27B Turbo-Brilliance-50X-RI GSQ-RCO IQ3_XXS (local)",
+          "tool_call": true,
+          "limit": {
+            "context": 128000,
+            "output": 32768
+          }
+        }
+      }
+    },
+    "strata": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Strata Coder (local)",
+      "options": {
+        "baseURL": "http://127.0.0.1:8080/v1",
+        "apiKey": "none"
+      },
+      "models": {
+        "strata": {
+          "name": "Qwen3.8-Flash-Next (Strata Coder)",
+          "limit": {
+            "context": 128000,
+            "output": 32768
+          },
+          "options": {
+            "reasoningEffort": "high"
+          },
+          "variants": {
+            "low": {
+              "reasoningEffort": "low"
+            },
+            "medium": {
+              "reasoningEffort": "medium"
+            },
+            "none": {
+              "reasoningEffort": "none"
+            }
+          }
+        }
+      }
+    },
+    "openai": {
+      "options": {
+        "baseURL": "http://127.0.0.1:8787/w/opencode/openai/v1"
+      }
+    },
+    "anthropic": {
+      "options": {
+        "baseURL": "http://127.0.0.1:8787/w/opencode/anthropic/v1"
+      }
+    },
+    "opencode-go": {
+      "options": {
+        "baseURL": "http://127.0.0.1:8787/w/opencode/compat/opencode-go/v1"
+      }
+    }
+  },
+  "skills": [
+    "~/.config/modelskills"
+  ],
+  "plugin": [
+    "./plugins/caveman"
+  ],
+  "mcp": {
+    "caveman": {
+      "type": "local",
+      "command": [
+        "/home/sentaku/.caveman/bin/caveman-mcp"
+      ],
+      "enabled": true
+    }
+  }
+}

@@ -1,0 +1,3 @@
+# This file contains fish universal variable definitions.
+# VERSION: 3.0
+SETUVAR fish_user_paths:/home/sentaku/\x2elocal/share/BFS/llama\x2ecpp/build/bin\x1e/home/sentaku/\x2elocal/bin\x1e/home/sentaku/\x2elocal/share/llama\x2dcpp/vulkan
