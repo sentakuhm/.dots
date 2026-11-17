@@ -3,7 +3,7 @@ import Quickshell
 import Quickshell.Wayland
 import "../Theme.js" as Theme
 
-// Floating notification toasts, Caelestia style: one panel hangs from the bar
+// Floating notification toasts: one panel hangs from the bar
 // at the top-right (lifted popup colour, no gap, concave corner into the bar,
 // flush against the right frame) and the toasts stack inside it, newest on top,
 // sliding in from its right edge.

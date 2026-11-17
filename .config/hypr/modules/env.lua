@@ -52,12 +52,13 @@ hl.env("MOZ_ENABLE_WAYLAND", "1")
 -------------------------
 -- Cursor
 -------------------------
---hl.env("XCURSOR_THEME", "oblique-cursor-light")
+--- Get theme from `https://github.com/ful1e5/BreezeX_Cursor`
+hl.env("XCURSOR_THEME", "BreezeX-Light")
 hl.env("XCURSOR_SIZE", "24")
-hl.env("HYPRCURSOR_THEME", "oblique-cursor-light")
+hl.env("HYPRCURSOR_THEME", "BreezeX-Light")
 hl.env("HYPRCURSOR_SIZE", "24")
 
 -------------------------
 -- Other
 -------------------------
--- hl.env("APPIMAGELAUNCHER_DISABLE", "1")
+hl.env("APPIMAGELAUNCHER_DISABLE", "1")

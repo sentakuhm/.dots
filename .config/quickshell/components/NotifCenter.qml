@@ -4,7 +4,7 @@ import Quickshell
 import Quickshell.Widgets
 import "../Theme.js" as Theme
 
-// Notification center, Caelestia style: notifications grouped by app with a
+// Notification center: notifications grouped by app with a
 // count, collapsible groups, a Do Not Disturb switch and Clear all.
 // Fills the PopupSurface it is placed in (the surface draws the background).
 Item {

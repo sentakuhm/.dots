@@ -1,0 +1,41 @@
+qml_module(sentaku-config
+    URI Sentaku.Config
+    INCLUDE_PREFIX config
+    SOURCES
+        common.cpp
+        rootnodes.cpp
+        configattached.cpp
+        appearanceconfig.cpp
+        borderconfig.cpp
+        font.cpp
+        fontbuilder.cpp
+        tokensattached.cpp
+        anim.cpp
+        enums.hpp
+        backgroundconfig.hpp
+        barconfig.hpp
+        dashboardconfig.hpp
+        generalconfig.hpp
+        launcherconfig.hpp
+        lockconfig.hpp
+        mandoconfig.hpp
+        notifsconfig.hpp
+        osdconfig.hpp
+        serviceconfig.hpp
+        sessionconfig.hpp
+        sidebarconfig.hpp
+        userpaths.hpp
+        utilitiesconfig.hpp
+        tokens.hpp
+    LIBRARIES
+        Qt::Quick
+        Qt::QuickControls2
+    DEPENDENCIES
+        Sentaku.Settings
+)
+target_link_libraries(sentaku-config PUBLIC
+    Qt::Gui
+    sentaku-util
+    sentaku-core
+    sentaku-settings
+)

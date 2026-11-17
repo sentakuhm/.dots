@@ -15,7 +15,6 @@
 - doannc2212/quickshell-config: https://github.com/doannc2212/quickshell-config — modular bar, launcher, notifications, OSD and wallpaper manager.
 - hyprbar: https://github.com/diogofd8/hyprbar — smaller top-bar design and clear notes for Hyprland Lua mode.
 - quickshell-bar: https://github.com/MM-2103/quickshell-bar — broader desktop shell and control-center ideas.
-- Caelestia: https://github.com/caelestia-dots/shell — full desktop shell reference.
 - Illogical Impulse: https://github.com/end-4/dots-hyprland — another large, preconfigured Quickshell-based desktop setup.
 
 Treat projects as design/API references, not drop-in modules. Check their required Quickshell version before copying code.

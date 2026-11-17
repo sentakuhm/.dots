@@ -16,8 +16,8 @@ hl.on("hyprland.start", function()
 	-------------------------
 	-- Wallpaper / Idle / Color temperature
 	-------------------------
-	hl.exec_cmd("hyprpaper")
-	--hl.exec_cmd("hypridle")
+	--hl.exec_cmd("hyprpaper")
+	hl.exec_cmd("hypridle")
 	-- hl.exec_cmd("hyprsunset")
 
 	-------------------------
@@ -33,7 +33,7 @@ hl.on("hyprland.start", function()
 	-------------------------
 	--hl.exec_cmd("kwalletd6") -- Used by some KDE / VS Code integrations.
 	hl.exec_cmd("udiskie")
-	hl.exec_cmd("clipse -listen")
+	hl.exec_cmd("clipse --listen")
 
 	-------------------------
 	-- Applications on specific workspaces

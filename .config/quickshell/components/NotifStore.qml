@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Services.Notifications
 
-// Notification service, modelled on Caelestia's Notifs service.
+// Notification service.
 //
 // It owns the NotificationServer (org.freedesktop.Notifications) and wraps
 // every incoming notification in a small `Notif` object that

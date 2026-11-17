@@ -1,0 +1,56 @@
+{
+  "appearance": {
+    "font": {
+      "clock": "JetBrainsMono Nerd Font",
+      "mono": {
+        "family": "JetBrainsMono Nerd Font"
+      }
+    },
+    "transparency": {
+      "enabled": true,
+      "base": 0.85,
+      "layers": 0.4
+    }
+  },
+  "utilities": {
+    "cards": {
+      "keepAwake": true,
+      "recorder": false,
+      "quickToggles": true
+    },
+    "quickToggles": [
+      {
+        "id": "wifi",
+        "enabled": true
+      },
+      {
+        "id": "bluetooth",
+        "enabled": true
+      },
+      {
+        "id": "mic",
+        "enabled": true
+      },
+      {
+        "id": "settings",
+        "enabled": true
+      },
+      {
+        "id": "gameMode",
+        "enabled": true
+      },
+      {
+        "id": "wallpaperPlaying",
+        "enabled": false
+      },
+      {
+        "id": "dnd",
+        "enabled": true
+      },
+      {
+        "id": "vpn",
+        "enabled": false
+      }
+    ]
+  }
+}

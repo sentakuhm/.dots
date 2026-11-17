@@ -22,6 +22,9 @@ hl.layer_rule({
     name = "senta-bar-glass-blur",
     match = { namespace = "^senta-bar$" },
     blur = true,
+    -- Frosts the anchored popups (calendar, power, apps, notifs, ws preview)
+    -- including their outer frames. Verified on 0.57: this layer rule alone
+    -- is enough; global decoration:blur:popups is not required.
     blur_popups = true,
     ignore_alpha = 0.12,
 })
@@ -38,6 +41,25 @@ hl.layer_rule({
 hl.layer_rule({
     name = "senta-frame-glass-blur",
     match = { namespace = "^senta-frame$" },
+    blur = true,
+    ignore_alpha = 0.12,
+})
+
+-- Sentaku dashboard (bottom-centre hover panel, modules/sentadash).
+-- The host window is large but almost entirely transparent; ignore_alpha keeps
+-- the blur confined to the painted panel.
+hl.layer_rule({
+    name = "senta-dashboard-glass-blur",
+    match = { namespace = "^senta-dashboard$" },
+    blur = true,
+    ignore_alpha = 0.12,
+})
+
+-- Quick menu (bottom-right hover panel with Wi-Fi / Bluetooth / settings, modules/sentadash).
+-- Same reasoning as the dashboard rule: the host window is mostly transparent.
+hl.layer_rule({
+    name = "senta-utilities-glass-blur",
+    match = { namespace = "^senta-utilities$" },
     blur = true,
     ignore_alpha = 0.12,
 })

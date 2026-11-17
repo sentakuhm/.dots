@@ -1,0 +1,21 @@
+Sentaku: origin and licence notice
+==================================
+
+The dashboard, quick menu and settings window in this folder (modules/dashboard,
+modules/utilities, modules/mando, daemons/), the QML components, services and
+utilities they use (components/, services/, utils/), and the C++ QML plugin (plugin/)
+are derived from the Caelestia desktop shell, https://github.com/caelestia-dots/shell,
+copyright its contributors, licensed under the GNU General Public License v3.0.
+
+Modified 2026-11-08: renamed throughout to Sentaku (its settings app to Mando); reduced to the parts the
+dashboard needs; hosted by modules/sentadash instead of the original window system;
+components/controls/Menu.qml patched (see the SENTA PATCH comment); components/Logo.qml
+and assets/logo.svg replaced with a placeholder mark.
+
+The combined work is distributed under the same licence (GPL v3): see the LICENSE
+file. Bundled third-party code keeps its own licence: plugin/3rdparty/rgbcx
+(its LICENSE), utils/scripts/fzf.js and fuzzysort.js (headers in the files), and the
+Google Sans Flex font (assets/google-sans-flex/LICENSE).
+
+This is a notice required by the GPL for derived works. Keep it if you distribute
+this folder to others.

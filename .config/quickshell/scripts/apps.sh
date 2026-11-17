@@ -5,9 +5,10 @@
 # - Local entries (~/.local/share/applications) override system ones with the
 #   same id (first directory in the list wins).
 # - Entries with NoDisplay / Hidden set, or without a Name, are skipped.
-# - Icon names are kept as desktop-entry theme names. Quickshell resolves them
-#   at runtime through the active Qt platform icon theme; absolute paths are
-#   preserved when they point to an existing file.
+# - Icons are resolved to absolute file paths by following the system icon
+#   theme chain (see icon_themes below), because Quickshell's image://icon/
+#   provider does not produce icons in this setup. Unresolved icons are
+#   emitted as "" and the launcher shows the app's initial letter instead.
 set -euo pipefail
 
 dirs=(
@@ -19,6 +20,53 @@ dirs=(
 bool() {
   # .desktop booleans are case-insensitive ("true"/"True").
   [ "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" = "true" ]
+}
+
+# Icon resolution, mirroring the chain the KDE platform theme would use
+# (kdeglobals: Papirus-Dark, which inherits breeze-dark, hicolor) plus the
+# monochrome Papirus set as a last resort.
+icon_themes=(
+  "${XDG_DATA_HOME:-$HOME/.local/share}/icons/Papirus-Dark"
+  "/usr/share/icons/Papirus-Dark"
+  "/usr/share/icons/breeze-dark"
+  "/usr/share/icons/hicolor"
+  "/usr/share/icons/Papirus"
+)
+icon_sizes=(48 64 32 24 128 256 16)
+icon_exts=(png webp svg)
+
+resolve_icon() {
+  # $1 = Icon= value (theme name(s), absolute path, or entry-relative path)
+  # $2 = directory of the .desktop file
+  # Prints the first file found, or nothing.
+  local name theme size ext layout found=""
+  # Desktop entries may list several names, most specific first.
+  for name in $1; do
+    case "$name" in
+      /*)  found="$name" ;;
+      */*) found="$2/$name" ;;
+      *)
+        for theme in "${icon_themes[@]}"; do
+          [ -d "$theme" ] || continue
+          for size in "${icon_sizes[@]}"; do
+            for ext in "${icon_exts[@]}"; do
+              for layout in \
+                        "$theme/$size/apps/$name.$ext" \
+                        "$theme/apps/$size/$name.$ext" \
+                        "$theme/${size}x${size}/apps/$name.$ext" \
+                        "$theme/apps/${size}x${size}/$name.$ext"; do
+                [ -f "$layout" ] && found="$layout" && break 4
+              done
+            done
+          done
+        done
+        ;;
+    esac
+    [ -n "$found" ] && break
+  done
+  if [ -n "$found" ] && [ -f "$found" ]; then
+    printf '%s' "$found"
+  fi
 }
 
 entries=()
@@ -54,8 +102,7 @@ for dir in "${dirs[@]}"; do
     [ "$nodisplay" = true ] && continue
     [ "$hidden" = true ] && continue
 
-    # Keep the desktop entry icon name intact. Quickshell resolves it through
-    # the active Qt platform icon theme (KDE/Papirus-Dark in this setup).
+    icon="$(resolve_icon "$icon" "${f%/*}")"
 
     # Strip XDG field codes (%u %U %F %f ...) from the exec string so it can be
     # handed straight to `sh -c`.

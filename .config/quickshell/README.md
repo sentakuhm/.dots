@@ -4,11 +4,11 @@ A modular, dark starter shell for **Quickshell 0.3.2** on Arch Linux + Hyprland 
 It keeps the same left / center / right organisation as your Waybar config.
 
 
-## Rounded screen frame (Caelestia style, bar on top)
+## Rounded screen frame (bar on top)
 
-Senta draws a solid frame around the output, in the same colour as the bar, so the visible desktop area has rounded corners on all four sides, like [caelestia-dots/shell](https://github.com/caelestia-dots/shell). The bar stays on top and forms the top edge of the frame; `components/ScreenFrame.qml` adds the left / right / bottom strips and the rounded inner corners (including the two directly under the bar).
+Senta draws a solid frame around the output, in the same colour as the bar, so the visible desktop area has rounded corners on all four sides. The bar stays on top and forms the top edge of the frame; `components/ScreenFrame.qml` adds the left / right / bottom strips and the rounded inner corners (including the two directly under the bar).
 
-- `screenCornerRadius` (default `14`) sets the inner corner radius. Smaller values push the curve tighter into the screen corners and make the corner pieces of the frame thinner; larger values (caelestia uses `25`) give a softer, bulkier corner.
+- `screenCornerRadius` (default `14`) sets the inner corner radius. Smaller values push the curve tighter into the screen corners and make the corner pieces of the frame thinner; larger values (e.g. `25`) give a softer, bulkier corner.
 - `frameThickness` (default `3`) sets the width of the left / right / bottom strips. Three tiny 1×1 exclusion surfaces reserve that space so tiled windows never sit under the frame.
 - The frame uses `Theme.bg`, so it always matches the bar and the two read as one flat piece. For a thin `Theme.border` outline along the whole inner edge, set `frameBorderWidth: 1` in `shell.qml` (default `0`).
 - The bar uses `ExclusionMode.Ignore` so it spans the full screen width; the frame's top edge-zone reserves `barExclusiveZone` (default `48`) below it.
@@ -18,6 +18,18 @@ Senta draws a solid frame around the output, in the same colour as the bar, so t
 - Bar items sit `barSidePadding` (default `5`) px from the screen edges. Every pill, workspace button and tray icon also accepts clicks across the full bar height, and the first (Arch logo) and last (power) hit areas extend to the screen edge, so slamming the cursor into a corner or the top edge still hits them instead of empty bar.
 - Every shell popup (app launcher, calendar, power, workspace hover preview, notification center and notification toasts) is drawn by `components/PopupSurface.qml`: a subtly lifted TokyoNight blue-violet surface (`Theme.popupBg`), no gap (it overlaps the bar by 1 px to hide seams), rounded bottom corners and small concave corners where it joins the bar. The calendar is centred under the clock; the app launcher is attached beneath the Arch logo at the left frame; power, notifications and toast panels attach to the right frame. `popupFillet` (default `14`) sets the concave radius; `0` gives a plain flush box. Native menus (tray right-click menus) and tooltips are drawn by the toolkit and cannot be restyled this way.
 - For the cleanest look, keep Hyprland's `gaps_out` small (roughly 5-10 px).
+
+## Sentaku dashboard and quick menu (bottom-edge hover)
+
+The Dashboard / Media / Performance / Weather panel pops up when you rest the pointer on the bottom centre of the screen, rising out of the bottom frame. A quick menu (Wi-Fi, Bluetooth, mic, settings button, ...) does the same from the bottom-right corner, and its settings button opens **Mando**, the settings window. Everything it needs is in this folder, including the C++ QML plugin source (`plugin/`), so there is nothing to download. You build the plugin once and install two system packages (M3Shapes and the Material Symbols font). Until then the rest of Senta starts normally and only the dashboard is disabled. Setup, tuning and troubleshooting: [docs/SENTAKU-DASHBOARD.md](docs/SENTAKU-DASHBOARD.md). Quick start:
+
+```bash
+scripts/build-sentaku-plugin.sh     # builds + installs the Sentaku QML plugin from ./plugin
+scripts/install-sentaku-data.sh     # Tokyo Night scheme + settings (never overwrites)
+scripts/dashboard-doctor.sh         # tells you what is still missing
+```
+
+IPC: `qs ipc call senta toggleDashboard`, `openDashboard <0-3>`, `closeDashboard`, `toggleUtilities`, `closeUtilities`, `openSettings`.
 
 ## What is included
 
@@ -29,11 +41,11 @@ Senta draws a solid frame around the output, in the same colour as the bar, so t
 
 ### Interactions
 
-- Click the Arch logo to open the app launcher, attached directly below the bar and flush with the left frame. The search field stays at the top; results use Caelestia-inspired icon/name/description rows, a highlighted selection, and a compact no-results state. Type to filter by name, generic name, comment, keywords, category or desktop-entry id; Up/Down changes the selection, Enter launches it, Esc closes the popup, and clicking a row launches it. The list scrolls when there are more than seven results. Entries with `Terminal=true` open in Kitty. The list comes from `scripts/apps.sh`, which parses `~/.local/share/applications`, `/usr/local/share/applications` and `/usr/share/applications` (local entries win on duplicate ids) and refreshes every 10 minutes. Application icon names are resolved at runtime with `Quickshell.iconPath()`, so they follow the active Qt platform icon theme. With `QT_QPA_PLATFORMTHEME=kde`, the launcher uses the icon theme selected in KDE (Papirus-Dark on this setup); absolute icon paths in desktop entries are preserved. No `IconTheme` pragma is set, so the shell does not override the system choice.
+- Click the Arch logo to open the app launcher, attached directly below the bar and flush with the left frame. The search field stays at the top; results use icon/name/description rows, a highlighted selection, and a compact no-results state. Type to filter by name, generic name, comment, keywords, category or desktop-entry id; Up/Down changes the selection, Enter launches it, Esc closes the popup, and clicking a row launches it. The list scrolls when there are more than seven results. Entries with `Terminal=true` open in Kitty. The list comes from `scripts/apps.sh`, which parses `~/.local/share/applications`, `/usr/local/share/applications` and `/usr/share/applications` (local entries win on duplicate ids) and refreshes every 10 minutes. Application icon names are resolved at runtime with `Quickshell.iconPath()`, so they follow the active Qt platform icon theme. With `QT_QPA_PLATFORMTHEME=kde`, the launcher uses the icon theme selected in KDE (Papirus-Dark on this setup); absolute icon paths in desktop entries are preserved. No `IconTheme` pragma is set, so the shell does not override the system choice.
 - The clock shows the time only; click it to open a month calendar (which shows the date); use the arrows to change months.
 - Click a workspace number to switch to it. The workspace click calls `hyprctl eval` with `hl.dispatch(hl.dsp.focus(...))`, matching Hyprland 0.55+ Lua configuration. It intentionally does not use the old `hyprctl dispatch workspace N` syntax.
 - Click the notification icon to open the notification center; right-click it to toggle DND.
-- Notifications follow Caelestia's design (`NotifStore`, `NotifPopups`, `NotifCard`, `NotifCenter` in `components/`):
+- Notifications use a card design (`NotifStore`, `NotifPopups`, `NotifCard`, `NotifCenter` in `components/`):
   - New notifications appear as a stack of toasts at the top-right that slides in from the screen edge, newest on top (max 5). Hovering a toast pauses its timer, and critical notifications stay until dismissed.
   - Click a card (or its chevron) to expand it: app name, full text, the app's actions and a Close button. Swipe a toast sideways to hide it (it stays in the center), middle-click to close it for good.
   - The center (bell icon) groups notifications by app with a count, collapsible groups, per-group clear, DND, Clear all and inline replies when the app offers them.
@@ -127,7 +139,14 @@ Append the contents of `hyprland-keybinds-snippet.lua` to your existing `~/.conf
 | `SUPER + ALT + P` | Power menu |
 | `SUPER + ALT + B` | Hide/show bar |
 
+| `SUPER + ALT + D` | Dashboard (Dashboard / Media / Performance / Weather) |
+| `SUPER + ALT + M` | Dashboard, Media tab |
+| `SUPER + ALT + U` | Quick menu (Wi-Fi, Bluetooth, ...) |
+| `SUPER + ALT + S` | Mando settings window |
+
 These are additive bindings; check that you have not assigned the same combinations elsewhere.
+
+Also add `hyprland-windowrules-snippet.lua` (floats the Mando settings window) at top level in a Hyprland Lua module, like the blur snippet.
 
 ## Settings to customise
 
@@ -176,7 +195,7 @@ Good projects to inspect for ideas:
 - **fbuedding/quickshell** — useful examples of a polished bar, PipeWire controls, MPRIS media, calendar and DBusMenu tray handling.
 - **doannc2212/quickshell-config** — a modular bar, launcher, notification daemon, OSD and wallpaper manager; good for studying reusable modules.
 - **hyprbar** — a lean top bar with configurable metrics, input/output volume controls and practical notes about Hyprland Lua mode.
-- **Caelestia** and **Illogical Impulse** — larger, preconfigured desktop shells that the Quickshell project itself points to as examples of complete setups.
+- **Illogical Impulse** — a larger, preconfigured desktop shell that the Quickshell project itself points to as an example of a complete setup.
 
 Do not copy a whole config blindly: Quickshell APIs evolve, and many public dotfiles target different release versions. Prefer current docs for your installed version.
 

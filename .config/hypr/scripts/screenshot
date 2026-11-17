@@ -1,121 +1,222 @@
 #!/usr/bin/env bash
 # Screenshot script for Hyprland
-# @sentakuhm
+# Original by @sentakuhm
+#
+# Required : grim, wl-clipboard (wl-copy)
+# Per mode : slurp (area/window/satty), hyprctl + jq (active/window/monitor), satty (--satty)
+# Optional : libnotify (notify-send), wayfreeze (freeze the screen while selecting)
 
 set -euo pipefail
 
-# === Config ===
-ICON_DIR="/usr/share/icons/Papirus-Dark/128x128/apps"
-DIR="$(xdg-user-dir PICTURES)/Screenshots"
-TIME=$(date "+%d-%b_%H-%M-%S")
-FILE="Screenshot_${TIME}.png"
+# === Config (override with environment variables) ===
+SAVE_DIR="${SCREENSHOT_DIR:-$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures")/Screenshots}"
+FREEZE_SCREEN="${SCREENSHOT_FREEZE:-1}"        # 1 = freeze screen while selecting (needs wayfreeze)
+NOTIFY_TIMEOUT="${SCREENSHOT_NOTIFY_MS:-3000}"
 
-mkdir -p "$DIR"
+# Icon *names* (resolved by your notification daemon through the current icon theme).
+ICON_APP="applets-screenshooter"
+ICON_TIMER="preferences-system-time"
+ICON_ERROR="dialog-error"
 
-# === Notifications ===
+FREEZE_PID=""
+GEOMETRY=""
+
+# === Helpers ===
 notify() {
-    local msg="$1"
-    local icon="${2:-$ICON_DIR/applets-screenshooter.svg}"
-    notify-send -h string:x-canonical-private-synchronous:shot-notify \
-        -t 2500 -i "$icon" "Screenshot" "$msg"
+    local body="$1" icon="${2:-$ICON_APP}" timeout="${3:-$NOTIFY_TIMEOUT}"
+    command -v notify-send >/dev/null 2>&1 || return 0
+    notify-send -a Screenshot \
+        -h string:x-canonical-private-synchronous:screenshot \
+        -t "$timeout" -i "$icon" "Screenshot" "$body" || true
 }
 
-notify_view() {
-    local type="${1:-normal}"
-    local filepath="$DIR/$FILE"
-
-    if [[ "$type" == "active" ]]; then
-        filepath="$active_window_path"
-    fi
-
-    if [[ -f "$filepath" ]]; then
-        notify "Saved: $(basename "$filepath")"
-        # Optional: open the image
-        # xdg-open "$filepath" &
-    else
-        notify "Screenshot failed"
-    fi
+die() {
+    printf 'screenshot: %s\n' "$*" >&2
+    notify "$*" "$ICON_ERROR"
+    exit 1
 }
 
-# === Countdown ===
-countdown() {
-    local sec=$1
-    for ((i=sec; i>0; i--)); do
-        notify-send -h string:x-canonical-private-synchronous:shot-notify \
-            -t 1000 -i "$ICON_DIR/timer.png" "Taking shot in: $i"
-        sleep 1
+need() {
+    local cmd
+    for cmd in "$@"; do
+        command -v "$cmd" >/dev/null 2>&1 || die "missing dependency: $cmd"
     done
 }
 
+# Timestamp is taken when the shot is saved, not when the script starts.
+# ISO order sorts chronologically and does not depend on your locale.
+new_path() {
+    local suffix="${1:+_$1}" base path n=1
+    base="$SAVE_DIR/Screenshot_$(date +%Y-%m-%d_%H-%M-%S)$suffix"
+    path="$base.png"
+    while [[ -e "$path" ]]; do   # never overwrite (or delete on failure) an existing shot
+        path="${base}_$((n++)).png"
+    done
+    printf '%s' "$path"
+}
+
+# "Saved" notification with the screenshot as its icon.
+# Clicking the actions opens the file or its folder (needs a daemon with action support).
+notify_saved() {
+    local file="$1"
+    command -v notify-send >/dev/null 2>&1 || return 0
+    (
+        action=$(notify-send -a Screenshot \
+            -h string:x-canonical-private-synchronous:screenshot \
+            -t "$NOTIFY_TIMEOUT" -i "$file" \
+            -A "open=Open" -A "folder=Show folder" \
+            "Screenshot saved" "$(basename "$file")" 2>/dev/null) || exit 0
+        case "$action" in
+            open)   xdg-open "$file" ;;
+            folder) xdg-open "$(dirname "$file")" ;;
+        esac
+    ) >/dev/null 2>&1 &
+    disown
+}
+
+# Usage: save_shot <file> [grim args...]
+# Runs grim, verifies the file, copies it to the clipboard, notifies.
+save_shot() {
+    local file="$1"
+    shift
+    if ! grim "$@" "$file" || [[ ! -s "$file" ]]; then
+        rm -f "$file"
+        die "Screenshot failed"
+    fi
+    wl-copy --type image/png < "$file" || notify "Saved, but clipboard copy failed" "$ICON_ERROR"
+    notify_saved "$file"
+}
+
+# === Freeze / region selection ===
+unfreeze() {
+    if [[ -n "$FREEZE_PID" ]]; then
+        kill "$FREEZE_PID" 2>/dev/null || true
+        wait "$FREEZE_PID" 2>/dev/null || true
+        FREEZE_PID=""
+        sleep 0.1   # let the compositor drop the overlay before grim runs
+    fi
+}
+trap unfreeze EXIT
+
+# Usage: select_region [slurp args...]   -> result in $GEOMETRY ("" if cancelled)
+select_region() {
+    need slurp
+    GEOMETRY=""
+    if [[ "$FREEZE_SCREEN" == 1 ]] && command -v wayfreeze >/dev/null 2>&1; then
+        wayfreeze >/dev/null 2>&1 &
+        FREEZE_PID=$!
+        sleep 0.2
+    fi
+    GEOMETRY=$(slurp "$@" 2>/dev/null) || true
+    unfreeze
+}
+
 # === Shot functions ===
-shotnow() {
-    grim - | tee "$DIR/$FILE" | wl-copy
-    notify_view
+shot_full() {
+    save_shot "$(new_path)"
 }
 
-shot5() {
-    countdown 5
-    sleep 0.5
-    grim - | tee "$DIR/$FILE" | wl-copy
-    notify_view
+shot_monitor() {
+    need hyprctl jq
+    local name
+    name=$(hyprctl -j monitors | jq -r '.[] | select(.focused) | .name')
+    [[ -n "$name" ]] || die "Could not detect the focused monitor"
+    save_shot "$(new_path)" -o "$name"
 }
 
-shot10() {
-    countdown 10
-    sleep 0.5
-    grim - | tee "$DIR/$FILE" | wl-copy
-    notify_view
+shot_delay() {
+    local sec="${1:-5}" i
+    [[ "$sec" =~ ^[0-9]+$ ]] || die "Invalid delay: $sec"
+    for ((i = sec; i > 0; i--)); do
+        notify "Taking shot in ${i}s..." "$ICON_TIMER" 1100
+        sleep 1
+    done
+    sleep 0.5   # make sure the last notification is gone
+    shot_full
 }
 
-shotarea() {
-    local geometry
-    geometry=$(slurp) || exit 0   # user cancelled
-
-    grim -g "$geometry" - | tee "$DIR/$FILE" | wl-copy
-    notify_view
+shot_area() {
+    select_region -d
+    [[ -n "$GEOMETRY" ]] || exit 0   # cancelled
+    save_shot "$(new_path)" -g "$GEOMETRY"
 }
 
-shotactive() {
-    local geometry
-    geometry=$(hyprctl -j activewindow | jq -r '"\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"')
+# Click on any visible window (on any monitor's current workspace) to capture it.
+shot_window() {
+    need hyprctl jq
+    local workspaces regions
+    workspaces=$(hyprctl -j monitors | jq -c '[.[] | .activeWorkspace.id, .specialWorkspace.id]')
+    regions=$(hyprctl -j clients | jq -r --argjson ws "$workspaces" '
+        .[]
+        | select(.mapped and (.hidden | not))
+        | select(.workspace.id as $id | $ws | index($id))
+        | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"')
+    [[ -n "$regions" ]] || die "No visible windows found"
 
-    local class
-    class=$(hyprctl -j activewindow | jq -r '.class')
-    active_window_path="$DIR/Screenshot_${TIME}_${class}.png"
-
-    grim -g "$geometry" "$active_window_path"
-    wl-copy < "$active_window_path"
-    notify_view "active"
+    select_region -r <<<"$regions"
+    [[ -n "$GEOMETRY" ]] || exit 0   # cancelled
+    save_shot "$(new_path)" -g "$GEOMETRY"
 }
 
-shotwin() {
-    # Same as shotactive (cleaner)
-    shotactive
+# Capture the focused window immediately, file name includes its class.
+shot_active() {
+    need hyprctl jq
+    local info geometry class
+    info=$(hyprctl -j activewindow 2>/dev/null) || true
+    geometry=$(jq -r 'select(.at != null) | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"' \
+        <<<"$info" 2>/dev/null) || true
+    [[ -n "$geometry" ]] || die "No active window"
+
+    class=$(jq -r '.class // ""' <<<"$info")
+    class=${class//[^[:alnum:]._-]/_}   # keep the file name safe
+    [[ -n "$class" ]] || class="window"
+
+    save_shot "$(new_path "$class")" -g "$geometry"
 }
 
-shotsatty() {
-    local tmpfile
-    tmpfile=$(mktemp /tmp/screenshot-XXXXXX.png)
+# Select an area, annotate in satty; saving/copying happens from satty itself.
+shot_satty() {
+    need satty
+    select_region -d
+    [[ -n "$GEOMETRY" ]] || exit 0   # cancelled
+    grim -g "$GEOMETRY" - | satty --filename - \
+        --output-filename "$(new_path)" \
+        --early-exit \
+        --copy-command wl-copy
+}
 
-    local geometry
-    geometry=$(slurp) || { rm -f "$tmpfile"; exit 0; }
+usage() {
+    cat <<EOF
+Usage: ${0##*/} <option>
 
-    grim -g "$geometry" "$tmpfile"
-    satty -f "$tmpfile"
-    rm -f "$tmpfile"
+  --now, --full    all monitors, immediately
+  --monitor        focused monitor only
+  --in N           all monitors after N seconds (default 5)
+  --in5, --in10    shortcuts for --in 5 / --in 10
+  --area           select an area
+  --win            click a window to capture it
+  --active         focused window, immediately
+  --satty          select an area and annotate it with satty
+  -h, --help       show this help
+
+Saved to: $SAVE_DIR
+EOF
 }
 
 # === Main ===
+need grim wl-copy
+mkdir -p "$SAVE_DIR"
+
 case "${1:-}" in
-    --now)     shotnow ;;
-    --in5)     shot5 ;;
-    --in10)    shot10 ;;
-    --win)     shotwin ;;
-    --area)    shotarea ;;
-    --active)  shotactive ;;
-    --satty)   shotsatty ;;
-    *)
-        echo "Available options: --now --in5 --in10 --win --area --active --satty"
-        exit 1
-        ;;
+    --now|--full) shot_full ;;
+    --monitor)    shot_monitor ;;
+    --in)         shot_delay "${2:-5}" ;;
+    --in5)        shot_delay 5 ;;
+    --in10)       shot_delay 10 ;;
+    --area)       shot_area ;;
+    --win)        shot_window ;;
+    --active)     shot_active ;;
+    --satty)      shot_satty ;;
+    -h|--help)    usage ;;
+    *)            usage >&2; exit 1 ;;
 esac

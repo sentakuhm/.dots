@@ -6,8 +6,7 @@ import "../Theme.js" as Theme
 // notification center, toasts). It uses a subtly lifted TokyoNight surface,
 // keeps a seamless one-pixel overlap with the bar, and flares out into small
 // concave corners where it meets the bar, so the popup reads as an extension
-// of the bar (Caelestia
-// style) instead of a floating box.
+// of the bar instead of a floating box.
 //
 // Three shapes:
 //   - tab (default): hangs from the bar with a concave corner on both sides.
@@ -39,6 +38,11 @@ Item {
     property bool attachRight: false
     // Flush against the left frame instead of hanging free on the left.
     property bool attachLeft: false
+    // Dashboard-style inner panel: with a value > 0, a lighter rounded
+    // rectangle (`innerColor`) is inset inside the surface, leaving an
+    // `innerMargin`-px ring of the outer surface colour around it.
+    property real innerMargin: 0
+    property color innerColor: Theme.surfaceRaised
 
     default property alias content: body.data
     readonly property alias body: body
@@ -180,6 +184,25 @@ Item {
             }
             PathLine { x: 0; y: 0 }
         }
+    }
+
+    // Inner panel (dashboard look): the lighter surface inset inside the dark
+    // frame. Declared between the Shape and `body` so it always renders above
+    // the surface and below the popup's content. It fills `body`, which spans
+    // exactly the surface's extent (the surface does NOT reach the window edge
+    // on the fillet side, only on the attached side), so the ring of outer
+    // colour stays a uniform `innerMargin` all around; the corner radius keeps
+    // the bottom corners concentric with the surface's.
+    Rectangle {
+        id: inner
+        visible: root.innerMargin > 0
+        anchors.fill: body
+        anchors.leftMargin: root.innerMargin
+        anchors.rightMargin: root.innerMargin
+        anchors.topMargin: root.innerMargin
+        anchors.bottomMargin: root.innerMargin
+        radius: Math.max(0, root.r - root.innerMargin)
+        color: root.innerColor
     }
 
     // Content area: right of the left fillet, below the overlap row, above the foot.

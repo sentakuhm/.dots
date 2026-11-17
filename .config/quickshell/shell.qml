@@ -10,6 +10,9 @@ import Quickshell.Io
 import Quickshell.Services.Pipewire
 import Quickshell.Services.SystemTray
 import "components"
+// Registers the dashboard host files with Quickshell (they are instantiated lazily by
+// components/DashboardSlot.qml, so a missing plugin only disables the dashboard).
+import "modules/sentadash"
 import "Theme.js" as Theme
 
 ShellRoot {
@@ -21,10 +24,12 @@ ShellRoot {
     property string shellName: "Senta"
     property int barHeight: 36
     property int barSidePadding: 5       // gap from the screen edge to the first / last bar item
-    property int barExclusiveZone: barHeight + 6   // space tiled windows keep clear below the bar
+    property int frameThickness: 3         // frame width on left / right / bottom (2-6 = barely visible)
+    // Top zone = bar + the same extra as the frame strips, so the gap between the
+    // window and the bar equals the gaps on the left / right / bottom.
+    property int barExclusiveZone: barHeight + frameThickness
     property int popupFillet: 14          // concave corners where popups blend into the bar (0 = plain flush)
     property int screenCornerRadius: 14   // inner corner radius of the frame (smaller = tighter into the corners)
-    property int frameThickness: 3         // frame width on left / right / bottom (2-6 = barely visible)
     readonly property int popupRightInset: Math.max(0, frameThickness - 1)   // right-attached popups overlap the frame by 1 px
     readonly property int popupLeftInset: Math.max(0, frameThickness - 1)    // left-attached popups overlap the frame by 1 px
     property real frameBorderWidth: 0      // 0 = flat frame, 1 = thin outline along the inner edge
@@ -42,6 +47,13 @@ ShellRoot {
     property bool showActiveWorkspace: true   // lighter highlight for workspaces with open windows
     property bool showActiveWindow: true      // hover a workspace to see its open window(s)
     property string activeWorkspaceIcon: "\u{eb7f}"   // nf-cod-window (U+EB7F); swap to any glyph you prefer
+    // "Needs attention" marker: when a window opens on a workspace you are not
+    // on (e.g. a link in the terminal opens Firefox on another workspace),
+    // that workspace is painted purple until you switch to it or close the
+    // window.
+    property bool showWorkspaceActivity: true
+    property string workspaceActivityColor: Theme.activity
+    property string workspaceActivitySoft: Theme.activitySoft
 
     // Shared state for all panels and their popups.
     property bool barVisible: true
@@ -66,6 +78,20 @@ ShellRoot {
     property int wsHoverId: 0
     property real wsHoverX: 0
     property var wsPreview: []
+    // Silent-open tracking: previous per-workspace window keys, and the
+    // workspaces currently marked as "needs attention".
+    // NOTE: must be `new Object()`, not a `{}` literal — a QML object literal in a
+    // property declaration is not a JS object: property writes are silently lost and
+    // Object.keys()/for-in throw "Value is undefined and could not be converted".
+    property var _wsSeen: new Object()
+    property var _wsPending: new Object()
+
+    function _wsWindowKey(t) {
+        const addr = t.address
+        if (addr && String(addr).length > 0) return String(addr)
+        // Toplevels without a reported address (rare) fall back to title + monitor.
+        return "~" + (t.title || "") + "@" + ((t.monitor && t.monitor.name) || "")
+    }
 
     function recomputeWorkspaceModel() {
         const focusId = (Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : -1)
@@ -80,6 +106,44 @@ ShellRoot {
             if (ws.id > maxWorkspaces && tl.length > 0) ids.push(ws.id)
         }
         ids.sort((a, b) => a - b)
+        // Silent-open detection: a window key that is new to a workspace marks
+        // that workspace, unless that workspace is the one you are currently
+        // on. A marker survives until you focus the workspace or the new
+        // window(s) close. The first pass only seeds the key snapshots, so
+        // starting the shell never paints every workspace with open windows
+        // purple.
+        const seen = root._wsSeen
+        const pending = root._wsPending
+        const firstPass = Object.keys(seen).length === 0
+        for (const id of ids) {
+            const ws = byId[id]
+            const tl = (ws && ws.toplevels && ws.toplevels.values) ? ws.toplevels.values : []
+            const keys = []
+            for (let j = 0; j < tl.length; ++j) keys.push(root._wsWindowKey(tl[j]))
+            if (!firstPass) {
+                const prev = seen[id] || []
+                // Keep only the markers whose window is still open...
+                const unseen = (pending[id] || []).filter(function (k) { return keys.indexOf(k) !== -1 })
+                // ...and add windows that just appeared on this workspace.
+                if (id !== focusId) {
+                    for (let j = 0; j < keys.length; ++j) {
+                        const k = keys[j]
+                        if (prev.indexOf(k) === -1 && unseen.indexOf(k) === -1) unseen.push(k)
+                    }
+                }
+                if (unseen.length > 0) pending[id] = unseen
+                else delete pending[id]
+            }
+            seen[id] = keys
+        }
+        // Looking at a workspace makes all its new windows seen.
+        if (pending[focusId]) delete pending[focusId]
+        for (const id in seen) {
+            if (ids.indexOf(Number(id)) === -1) {
+                delete seen[id]
+                delete pending[id]
+            }
+        }
         const items = []
         for (const id of ids) {
             const ws = byId[id]
@@ -89,10 +153,12 @@ ShellRoot {
                 const t = tl[j].title
                 if (t && t.length > 0) titles.push(t)
             }
-            items.push({ id: id, focused: id === focusId, active: titles.length > 0, titles: titles, toplevels: tl })
+            // Workspaces with an urgent client (requested attention) count too.
+            items.push({ id: id, focused: id === focusId, active: titles.length > 0,
+                         pending: !!pending[id] || !!(ws && ws.urgent), titles: titles, toplevels: tl })
         }
         const sig = items.map(function (i) {
-            return i.id + (i.focused ? "F" : "") + (i.active ? "A" : "") + "][" + i.titles.join("\u0000")
+            return i.id + (i.focused ? "F" : "") + (i.active ? "A" : "") + (i.pending ? "P" : "") + "][" + i.titles.join("\u0000")
         }).join("|")
         if (sig !== root._wsSig) {
             root._wsSig = sig
@@ -116,6 +182,14 @@ ShellRoot {
     }
     Connections {
         target: Hyprland.workspaces
+        function onDataChanged() { root.recomputeWorkspaceModel() }
+        function onLayoutChanged() { root.recomputeWorkspaceModel() }
+        function onValuesChanged() { root.recomputeWorkspaceModel() }
+    }
+    // The global toplevel model fires the moment any window opens or closes,
+    // so silent opens get marked without waiting for the poll timer.
+    Connections {
+        target: Hyprland.toplevels
         function onDataChanged() { root.recomputeWorkspaceModel() }
         function onLayoutChanged() { root.recomputeWorkspaceModel() }
         function onValuesChanged() { root.recomputeWorkspaceModel() }
@@ -203,9 +277,11 @@ ShellRoot {
         return out
     }
 
-    // Resolve application icons at runtime through Qt's active platform theme.
-    // With QT_QPA_PLATFORMTHEME=kde, this follows the icon theme selected in KDE
-    // (Papirus-Dark on this setup). Absolute desktop-entry icon paths are kept.
+    // apps.sh already resolves desktop-entry icons to absolute file paths
+    // (scripts/apps.sh follows the icon theme chain itself, because this
+    // Quickshell build's image://icon/ provider returns no icons). Pass file
+    // paths straight through; anything that still arrives as a theme name is
+    // handed to the icon provider as a last resort.
     function appIconSource(iconName) {
         const name = String(iconName || "").trim()
         if (name === "") return ""
@@ -269,6 +345,37 @@ ShellRoot {
         onTriggered: root.now = new Date()
     }
 
+    // Bottom-centre Sentaku dashboard (hover the bottom centre of a screen).
+    // One DashboardSlot per screen registers itself here; see modules/sentadash
+    // and docs/SENTAKU-DASHBOARD.md.
+    property var dashboardSlots: ({})
+    function activeDashboard() {
+        const mon = Hyprland.focusedMonitor
+        const slot = mon ? root.dashboardSlots[mon.name] : null
+        if (slot) return slot
+        const names = Object.keys(root.dashboardSlots)
+        return names.length > 0 ? root.dashboardSlots[names[0]] : null
+    }
+    function closeDashboards() {
+        for (const name in root.dashboardSlots)
+            root.dashboardSlots[name].close()
+    }
+
+    // Bottom-right quick menu (Wi-Fi, Bluetooth, ... and the Mando settings button).
+    // Same registry pattern; see modules/sentadash and docs/SENTAKU-DASHBOARD.md.
+    property var utilitiesSlots: ({})
+    function activeUtilities() {
+        const mon = Hyprland.focusedMonitor
+        const slot = mon ? root.utilitiesSlots[mon.name] : null
+        if (slot) return slot
+        const names = Object.keys(root.utilitiesSlots)
+        return names.length > 0 ? root.utilitiesSlots[names[0]] : null
+    }
+    function closeUtilities() {
+        for (const name in root.utilitiesSlots)
+            root.utilitiesSlots[name].close()
+    }
+
     // Keep the bar menus mutually exclusive so a second popup never opens
     // behind or on top of the first one.
     function closeMenuPopups() {
@@ -305,8 +412,19 @@ ShellRoot {
         function toggleNotifications(): void { root.toggleNotifications(); }
         function toggleDnd(): void { notifs.dnd = !notifs.dnd; }
         function togglePower(): void { root.togglePower(); }
+        function toggleApps(): void { root.toggleApps(); }
+        // Dashboard tabs: 0 Dashboard, 1 Media, 2 Performance, 3 Weather.
+        function toggleDashboard(): void { root.activeDashboard()?.toggle() }
+        function openDashboard(tab: int): void { root.activeDashboard()?.showTab(tab) }
+        function closeDashboard(): void { root.closeDashboards() }
+        // Quick menu (Wi-Fi, Bluetooth, ...) and the Mando settings window.
+        function toggleUtilities(): void { root.activeUtilities()?.toggle() }
+        function closeUtilities(): void { root.closeUtilities() }
+        function openSettings(): void { root.activeUtilities()?.openSettings() }
         function closePopups(): void {
             root.closeMenuPopups()
+            root.closeDashboards()
+            root.closeUtilities()
             notifs.hidePopups()
         }
     }
@@ -321,7 +439,13 @@ ShellRoot {
             id: screenScope
             required property var modelData
 
-            // Caelestia-style frame: rounded inner corners on all four sides,
+            // Wallpaper: drawn by the shell on the bottom layer, behind the
+            // frame, bar and panels (see components/WallpaperBackground.qml).
+            WallpaperBackground {
+                targetScreen: screenScope.modelData
+            }
+
+            // Screen frame: rounded inner corners on all four sides,
             // bar stays on top. See components/ScreenFrame.qml.
             ScreenFrame {
                 targetScreen: screenScope.modelData
@@ -334,13 +458,48 @@ ShellRoot {
                 frameColor: Theme.bg
             }
 
-            // Caelestia-style toast stack: slides in from the right edge.
+            // Toast stack: slides in from the right edge.
             NotifPopups {
                 targetScreen: screenScope.modelData
                 store: notifs
                 topInset: root.barVisible ? root.barHeight : root.frameThickness
                 edgeGap: root.popupRightInset
                 fillet: root.popupFillet
+            }
+
+            // Sentaku dashboard (Dashboard / Media / Performance / Weather):
+            // pops up when the pointer rests at the bottom centre of the screen.
+            DashboardSlot {
+                id: dashboardSlot
+                targetScreen: screenScope.modelData
+                frameThickness: root.frameThickness
+                fillet: root.popupFillet
+                Component.onCompleted: root.dashboardSlots[screenScope.modelData.name] = dashboardSlot
+                Component.onDestruction: delete root.dashboardSlots[screenScope.modelData.name]
+            }
+
+            // Quick menu (Wi-Fi, Bluetooth, mic, settings, ...): pops up when the pointer rests
+            // at the bottom-right of the screen. Only the first screen also runs the background
+            // behaviour (keep awake, game mode, do-not-disturb bridge).
+            UtilitiesSlot {
+                id: utilitiesSlot
+                targetScreen: screenScope.modelData
+                notifStore: notifs
+                frameThickness: root.frameThickness
+                fillet: root.popupFillet
+                primary: Quickshell.screens.length > 0 && Quickshell.screens[0].name === screenScope.modelData.name
+                Component.onCompleted: root.utilitiesSlots[screenScope.modelData.name] = utilitiesSlot
+                Component.onDestruction: delete root.utilitiesSlots[screenScope.modelData.name]
+            }
+
+            // The two bottom panels never show at once.
+            Connections {
+                target: dashboardSlot
+                function onOpened() { utilitiesSlot.close() }
+            }
+            Connections {
+                target: utilitiesSlot
+                function onOpened() { dashboardSlot.close() }
             }
 
             PanelWindow {
@@ -421,28 +580,33 @@ ShellRoot {
                                     radius: 7
                                     property bool focused: modelData.focused
                                     property bool active: modelData.active
+                                    property bool pending: modelData.pending && root.showWorkspaceActivity
                                     color: focused ? Theme.accentSoft
-                                           : (active && root.showActiveWorkspace ? Theme.accentActive : "transparent")
-                                    border.width: (focused || (active && root.showActiveWorkspace)) ? 1 : 0
-                                    border.color: focused ? Theme.accent : Theme.accentActive
+                                           : (pending ? root.workspaceActivitySoft
+                                                  : (active && root.showActiveWorkspace ? Theme.accentActive : "transparent"))
+                                    border.width: (focused || pending || (active && root.showActiveWorkspace)) ? 1 : 0
+                                    border.color: focused ? Theme.accent
+                                               : (pending ? root.workspaceActivityColor : Theme.accentActive)
                         
                                     Row {
                                         anchors.centerIn: parent
                                         spacing: 2
                                         // Active workspaces show the icon only; inactive ones the number.
+                                        // A pending workspace is painted purple so silent opens stand out.
                                         Text {
                                             visible: active && root.showActiveWorkspace
                                             text: root.activeWorkspaceIcon
                                             font.family: Theme.iconFont
                                             font.pixelSize: 11
-                                            color: focused ? Theme.accent : Theme.accentActiveText
+                                            color: focused ? Theme.accent
+                                                   : (pending ? root.workspaceActivityColor : Theme.accentActiveText)
                                             anchors.verticalCenter: parent.verticalCenter
                                         }
                                         Text {
                                             visible: !(active && root.showActiveWorkspace)
                                             text: String(modelData.id)
                                             color: focused ? Theme.accent
-                                                   : Theme.muted
+                                                   : (pending ? root.workspaceActivityColor : Theme.muted)
                                             font.family: Theme.uiFont
                                             font.pixelSize: 11
                                             font.weight: Font.DemiBold
@@ -482,16 +646,20 @@ ShellRoot {
                         text: (function () {
                             const ws = Hyprland.focusedWorkspace
                             const tls = (ws && ws.toplevels && ws.toplevels.values) ? ws.toplevels.values : []
+                            let title
                             for (let i = 0; i < tls.length; ++i) {
-                                if (tls[i].activated) return tls[i].title || "Desktop"
+                                if (tls[i].activated) { title = tls[i].title || "Desktop"; break }
                             }
-                            return "Desktop"
+                            title = title || "Desktop"
+                            // Keep the bar tidy: show the start of long titles, the ellipsis
+                            // hints the title continues. Tune the 44 to taste.
+                            return title.length > 44 ? title.slice(0, 44) + "…" : title
                         })()
                         color: Theme.muted
                         font.family: Theme.uiFont
                         font.pixelSize: 11
                         horizontalAlignment: Text.AlignHCenter
-                        elide: Text.ElideMiddle
+                        elide: Text.ElideRight
                         verticalAlignment: Text.AlignVCenter
                     }
 
@@ -561,13 +729,6 @@ ShellRoot {
                         }
 
                         Pill {
-                            icon: "󰌌"
-                            label: root.keyboardLayout
-                            //tooltip: "Keyboard layout (EN / ARA) · switched by your Hyprland keybind"
-                            iconColor: Theme.lavender
-                        }
-
-                        Pill {
                             icon: notifs.dnd ? "󰂛" : ""
                             label: notifs.dnd ? "DND" :
                                    (notifs.count > 0
@@ -580,61 +741,198 @@ ShellRoot {
                             }
                         }
 
-                        Pill {
-                            icon: root.networkData.kind === "wifi" ? "" :
-                                  (root.networkData.kind === "ethernet" ? "󰈀" : "󰤭")
-                            label: root.networkData.kind === "ethernet" ? "" : (root.networkData.label || "Offline")
-                            //tooltip: root.networkData.name || "Network status"
-                            iconColor: root.networkData.kind === "offline" ? Theme.red : Theme.green
-                            onActivated: Quickshell.execDetached(["kitty", "-e", "nmtui"])
-                        }
+                        // Combined status pill: layout · network · audio · clock
+                        // in one pill. The sections are separated by invisible
+                        // separators — each keeps its own mouse area and
+                        // behaviour; the whole pill highlights when any section
+                        // is hovered.
+                        Item {
+                            id: statusPill
+                            height: 26
+                            implicitWidth: statusRow.implicitWidth
+                            readonly property bool hovered: kbMouse.containsMouse ||
+                                                           netMouse.containsMouse ||
+                                                           audMouse.containsMouse ||
+                                                           clockMouse.containsMouse
 
-                        Pill {
-                            icon: !Pipewire.defaultAudioSink || !Pipewire.defaultAudioSink.audio ? "" :
-                                  (Pipewire.defaultAudioSink.audio.muted ? "󰝟" :
-                                   (Pipewire.defaultAudioSink.audio.volume > 0.65 ? "" : ""))
-                            label: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio
-                                   ? Math.round(Pipewire.defaultAudioSink.audio.volume * 100) + "%" : "—"
-                            //tooltip: "Output volume · click to mute · scroll to change"
-                            onActivated: {
-                                if (Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio)
-                                    Pipewire.defaultAudioSink.audio.muted = !Pipewire.defaultAudioSink.audio.muted
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 9
+                                color: statusPill.hovered ? Theme.surfaceRaised : Theme.surface
+                                border.width: 1
+                                border.color: statusPill.hovered ? Theme.accentSoft : Theme.border
+                                Behavior on color { ColorAnimation { duration: 120 } }
                             }
-                            onScrolled: delta => {
-                                if (Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio) {
-                                    const step = delta > 0 ? 0.05 : -0.05
-                                    Pipewire.defaultAudioSink.audio.volume = Math.max(0, Math.min(1.5, Pipewire.defaultAudioSink.audio.volume + step))
+
+                            Row {
+                                id: statusRow
+                                anchors.centerIn: parent
+                                spacing: 0
+
+                                // Layout section: text only (EN / ARA), read from
+                                // the active Hyprland keymap. Hover only — switching
+                                // is your Hyprland keybind, not this pill.
+                                Item {
+                                    implicitWidth: kbContent.implicitWidth + 18
+                                    implicitHeight: 26
+
+                                    Row {
+                                        id: kbContent
+                                        anchors.centerIn: parent
+                                        spacing: 5
+
+                                        Text {
+                                            text: root.keyboardLayout
+                                            color: Theme.text
+                                            font.family: Theme.uiFont
+                                            font.pixelSize: 11
+                                            font.weight: Font.Medium
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: kbMouse
+                                        anchors.fill: parent
+                                        anchors.topMargin: -5
+                                        anchors.bottomMargin: -5
+                                        hoverEnabled: true
+                                    }
+                                }
+
+                                // Network section.
+                                Item {
+                                    implicitWidth: netContent.implicitWidth + 18
+                                    implicitHeight: 26
+
+                                    Row {
+                                        id: netContent
+                                        anchors.centerIn: parent
+                                        spacing: 5
+
+                                        Text {
+                                            text: root.networkData.kind === "wifi" ? "" :
+                                                  (root.networkData.kind === "ethernet" ? "󰈀" : "󰤭")
+                                            color: root.networkData.kind === "offline" ? Theme.red : Theme.green
+                                            font.family: Theme.iconFont
+                                            font.pixelSize: 15
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                        Text {
+                                            visible: root.networkData.kind !== "ethernet"
+                                            text: root.networkData.label || "Offline"
+                                            color: Theme.text
+                                            font.family: Theme.uiFont
+                                            font.pixelSize: 11
+                                            font.weight: Font.Medium
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: netMouse
+                                        anchors.fill: parent
+                                        anchors.topMargin: -5
+                                        anchors.bottomMargin: -5
+                                        hoverEnabled: true
+                                        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: mouse => {
+                                            if (mouse.button === Qt.RightButton) {
+                                                root.activeUtilities()?.openSettingsPage("network")
+                                                return
+                                            }
+                                            Quickshell.execDetached(["kitty", "-e", "nmtui"])
+                                        }
+                                    }
+                                }
+
+                                // Audio section.
+                                Item {
+                                    implicitWidth: audContent.implicitWidth + 18
+                                    implicitHeight: 26
+
+                                    Row {
+                                        id: audContent
+                                        anchors.centerIn: parent
+                                        spacing: 5
+
+                                        Text {
+                                            text: !Pipewire.defaultAudioSink || !Pipewire.defaultAudioSink.audio ? "" :
+                                                  (Pipewire.defaultAudioSink.audio.muted ? "󰝟" :
+                                                   (Pipewire.defaultAudioSink.audio.volume > 0.65 ? "" : ""))
+                                            color: Theme.accent
+                                            font.family: Theme.iconFont
+                                            font.pixelSize: 15
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                        Text {
+                                            text: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio
+                                                   ? Math.round(Pipewire.defaultAudioSink.audio.volume * 100) + "%" : "—"
+                                            color: Theme.text
+                                            font.family: Theme.uiFont
+                                            font.pixelSize: 11
+                                            font.weight: Font.Medium
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: audMouse
+                                        anchors.fill: parent
+                                        anchors.topMargin: -5
+                                        anchors.bottomMargin: -5
+                                        hoverEnabled: true
+                                        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: mouse => {
+                                            if (mouse.button === Qt.RightButton) {
+                                                root.activeUtilities()?.openSettingsPage("audio")
+                                                return
+                                            }
+                                            if (Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio)
+                                                Pipewire.defaultAudioSink.audio.muted = !Pipewire.defaultAudioSink.audio.muted
+                                        }
+                                        onWheel: wheel => {
+                                            if (Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio) {
+                                                const step = wheel.angleDelta.y > 0 ? 0.05 : -0.05
+                                                Pipewire.defaultAudioSink.audio.volume = Math.max(0, Math.min(1.5, Pipewire.defaultAudioSink.audio.volume + step))
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Clock section (the calendar popup centres on it).
+                                Item {
+                                    id: clockSeg
+                                    implicitWidth: clockContent.implicitWidth + 18
+                                    implicitHeight: 26
+
+                                    Row {
+                                        id: clockContent
+                                        anchors.centerIn: parent
+                                        Text {
+                                            text: Qt.formatDateTime(root.now, "HH:mm")
+                                            color: Theme.text
+                                            font.family: Theme.uiFont
+                                            font.pixelSize: 11
+                                            font.weight: Font.Medium
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: clockMouse
+                                        anchors.fill: parent
+                                        anchors.topMargin: -5
+                                        anchors.bottomMargin: -5
+                                        hoverEnabled: true
+                                        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.toggleCalendar()
+                                    }
                                 }
                             }
-                        }
-
-                        Pill {
-                            icon: !Pipewire.defaultAudioSource || !Pipewire.defaultAudioSource.audio ? "" :
-                                  (Pipewire.defaultAudioSource.audio.muted ? "󰍭" : "")
-                            label: Pipewire.defaultAudioSource && Pipewire.defaultAudioSource.audio
-                                   ? Math.round(Pipewire.defaultAudioSource.audio.volume * 100) + "%" : "—"
-                            //tooltip: "Microphone · click to mute · scroll to change"
-                            iconColor: Pipewire.defaultAudioSource && Pipewire.defaultAudioSource.audio && Pipewire.defaultAudioSource.audio.muted
-                                       ? Theme.red : Theme.lavender
-                            onActivated: {
-                                if (Pipewire.defaultAudioSource && Pipewire.defaultAudioSource.audio)
-                                    Pipewire.defaultAudioSource.audio.muted = !Pipewire.defaultAudioSource.audio.muted
-                            }
-                            onScrolled: delta => {
-                                if (Pipewire.defaultAudioSource && Pipewire.defaultAudioSource.audio) {
-                                    const step = delta > 0 ? 0.05 : -0.05
-                                    Pipewire.defaultAudioSource.audio.volume = Math.max(0, Math.min(1.5, Pipewire.defaultAudioSource.audio.volume + step))
-                                }
-                            }
-                        }
-
-                        Pill {
-                            icon: ""
-                            id: clockPill
-                            label: Qt.formatDateTime(root.now, "HH:mm")
-                            //tooltip: "Open calendar"
-                            iconColor: Theme.accent
-                            onActivated: root.toggleCalendar()
                         }
 
                         Pill {
@@ -677,6 +975,9 @@ ShellRoot {
                     PopupSurface {
                         anchors.fill: parent
                         fillet: root.popupFillet
+                        color: Theme.bg               // dark outer frame, same colour as the bar
+                        innerMargin: 8                // dashboard-style frame ring
+                        innerColor: Theme.popupBg     // lighter inner panel
 
                         Column {
                             anchors.fill: parent
@@ -741,8 +1042,8 @@ ShellRoot {
                     // sides), so centring the window centres the visible body too.
                     anchor.rect.x: {
                         // Not reactive on its own: re-evaluate when it opens or the bar changes.
-                        root.calendarOpen; barWindow.width; clockPill.width
-                        const center = clockPill.mapToItem(barWindow.contentItem, clockPill.width / 2, 0).x
+                        root.calendarOpen; barWindow.width; clockSeg.width
+                        const center = clockSeg.mapToItem(barWindow.contentItem, clockSeg.width / 2, 0).x
                         return Math.max(8, Math.min(barWindow.width - width - root.popupRightInset,
                                                     Math.round(center - width / 2)))
                     }
@@ -758,6 +1059,9 @@ ShellRoot {
                     PopupSurface {
                         anchors.fill: parent
                         fillet: root.popupFillet
+                        color: Theme.bg               // dark outer frame, same colour as the bar
+                        innerMargin: 8                // dashboard-style frame ring
+                        innerColor: Theme.popupBg     // lighter inner panel
 
                         Column {
                             anchors.fill: parent
@@ -887,6 +1191,9 @@ ShellRoot {
                         anchors.fill: parent
                         fillet: root.popupFillet
                         attachRight: true
+                        color: Theme.bg               // dark outer frame, same colour as the bar
+                        innerMargin: 8                // dashboard-style frame ring
+                        innerColor: Theme.popupBg     // lighter inner panel
 
                         NotifCenter {
                             anchors.fill: parent
@@ -912,6 +1219,9 @@ ShellRoot {
                         anchors.fill: parent
                         fillet: root.popupFillet
                         attachRight: true
+                        color: Theme.bg               // dark outer frame, same colour as the bar
+                        innerMargin: 8                // dashboard-style frame ring
+                        innerColor: Theme.popupBg     // lighter inner panel
 
                         Column {
                             anchors.fill: parent
@@ -963,7 +1273,7 @@ ShellRoot {
                     }
                 }
 
-                // Caelestia-inspired app launcher. It stays attached beneath
+                // App launcher. It stays attached beneath
                 // the Arch logo and flush to the left frame; search is kept at
                 // the top as requested. The result list supports keyboard
                 // selection, scrolling, and a name + description row layout.
@@ -1002,6 +1312,9 @@ ShellRoot {
                         anchors.fill: parent
                         fillet: root.popupFillet
                         attachLeft: true
+                        color: Theme.bg               // dark outer frame, same colour as the bar
+                        innerMargin: 8                // dashboard-style frame ring
+                        innerColor: Theme.popupBg     // lighter inner panel
 
                         Column {
                             anchors.fill: parent
@@ -1112,7 +1425,7 @@ ShellRoot {
                                 }
                             }
 
-                            // Caelestia-like rows: icon, app name, and a muted
+                            // Rows: icon, app name, and a muted
                             // generic name/comment. Only seven rows are visible;
                             // the rest remain available through scrolling.
                             Item {
@@ -1154,7 +1467,9 @@ ShellRoot {
                                                 height: 36
                                                 radius: 9
                                                 anchors.verticalCenter: parent.verticalCenter
-                                                color: modelData.icon === "" ? Theme.accentSoft : Theme.surface
+                                                // Only the no-icon fallback (initial letter) needs a tile;
+                                                // a real icon sits directly on the glass surface.
+                                                color: modelData.icon === "" ? Theme.accentSoft : "transparent"
 
                                                 Image {
                                                     visible: modelData.icon !== ""
@@ -1165,8 +1480,11 @@ ShellRoot {
                                                     sourceSize.width: 48
                                                     sourceSize.height: 48
                                                     fillMode: Image.PreserveAspectFit
-                                                    asynchronous: true
+                                                    asynchronous: false
                                                     smooth: true
+                                                    // Note: in this build status may report Loading(1) even
+                                                    // after the image decoded; rendering is driven by the
+                                                    // pixmap data, not the status, so don't chase it.
                                                 }
                                                 Text {
                                                     visible: modelData.icon === ""

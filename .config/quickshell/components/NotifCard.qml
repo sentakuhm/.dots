@@ -5,7 +5,7 @@ import Quickshell
 import Quickshell.Widgets
 import "../Theme.js" as Theme
 
-// One notification, styled after Caelestia's cards:
+// One notification, styled as a compact card:
 //   - round avatar: the sender's image with a small app-icon badge, or just
 //     the app icon on a coloured disc,
 //   - bold summary with a one-line body preview,

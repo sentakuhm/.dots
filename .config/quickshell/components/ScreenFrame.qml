@@ -3,7 +3,7 @@ import QtQuick.Shapes
 import Quickshell
 import Quickshell.Wayland
 
-// Caelestia-style screen frame, adapted for a TOP bar.
+// Screen frame, adapted for a TOP bar.
 //
 // A solid frame (same colour as the bar) surrounds the output on the left,
 // right and bottom, and the visible desktop area inside it has rounded
