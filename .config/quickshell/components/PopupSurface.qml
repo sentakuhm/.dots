@@ -19,6 +19,26 @@ import "../Theme.js" as Theme
 //     left screen frame and the foot flares down into the left frame
 //     (right fillet only; `fillet` wider and `fillet` taller).
 //
+// Seamless frame join (attachRight / attachLeft): a compositor may place an
+// xdg popup a pixel or two away from where it was asked to go, which leaves a
+// hairline of wallpaper between the popup and the screen frame. `bleed` fixes
+// that: the surface is drawn `bleed` px further out than its visual edge, past
+// the edge of the screen, so it always runs underneath the frame instead of
+// stopping short of it. The window must then be `bleed` px wider again on that
+// side (so: `fillet + bleed` wider than the content) and is placed so the
+// visual edge lands where it did before. Content, ring and foot keep their
+// positions; only the background is extended. Leave it at 0 for popups that
+// do not touch the frame.
+//
+// Ring drawn by the screen frame: a popup's translucent outer ring is blurred by
+// the compositor together with everything already on screen behind it, and the
+// dark bar and frame are on screen, so a ring drawn BY the popup comes out
+// darker than the bar next to it. The frame, however, is drawn before the bar
+// and always matches it. So with `ringVisible: false` the popup draws only its
+// inner panel and content, and the screen frame draws the ring for it as part
+// of its own glass layer (see ScreenFrame `rings`, which instantiates this same
+// component with `outlineOnly: true` so the outline geometry can never drift).
+//
 // Children go into `body`, the content rectangle, and are laid out as usual.
 //
 //   PopupWindow { implicitWidth: 306 + 2 * fillet; anchor.rect.y: bar.height - topOverlap
@@ -38,6 +58,14 @@ Item {
     property bool attachRight: false
     // Flush against the left frame instead of hanging free on the left.
     property bool attachLeft: false
+    // Extra background drawn beyond the attached edge (see "Seamless frame
+    // join" above). Only used with attachRight / attachLeft.
+    property real bleed: 0
+    // false: do not paint the outer ring here, the screen frame paints it (see above).
+    property bool ringVisible: true
+    // Draw only the outer outline (no inner panel, no content). Used by the
+    // screen frame to paint this popup's ring as part of the frame.
+    property bool outlineOnly: false
     // Dashboard-style inner panel: with a value > 0, a lighter rounded
     // rectangle (`innerColor`) is inset inside the surface, leaving an
     // `innerMargin`-px ring of the outer surface colour around it.
@@ -47,14 +75,25 @@ Item {
     default property alias content: body.data
     readonly property alias body: body
 
+    // What the outer outline is filled with.
+    readonly property color ringFill: ringVisible ? color : "transparent"
+    // Bleed only applies when the popup is attached to a frame edge.
+    readonly property real bl: (attachRight || attachLeft) ? Math.max(0, bleed) : 0
+    // Visual width: the window minus the bleed hanging off the attached edge.
+    readonly property real vw: width - bl
     // Clamped so the path stays valid while the popup is tiny or animating.
     readonly property real o: topOverlap
-    readonly property real f: Math.max(0, Math.min(fillet, width / 2, (height - o) / ((attachRight || attachLeft) ? 2 : 1)))
+    readonly property real f: Math.max(0, Math.min(fillet, vw / 2, (height - o) / ((attachRight || attachLeft) ? 2 : 1)))
     readonly property real foot: (attachRight || attachLeft) ? f : 0
     readonly property real rightF: attachRight ? 0 : f
-    readonly property real r: Math.max(0, Math.min(radius, (width - f - rightF) / 2, height - foot - o - f))
+    readonly property real r: Math.max(0, Math.min(radius, (vw - f - rightF) / 2, height - foot - o - f))
     // Bottom edge of the content (the foot hangs below it in attachRight mode).
     readonly property real bodyBottom: height - foot
+    // Intermediate outline points on the attached edge. With a bleed they are the
+    // corners of the bleed block; without one they sit midway along the (straight)
+    // edge instead, so the outline never contains a zero-length segment.
+    readonly property real seamRight: bl > 0 ? bodyBottom : (bodyBottom + height) / 2
+    readonly property real seamLeft: bl > 0 ? bodyBottom : bodyBottom / 2
 
     Shape {
         anchors.fill: parent
@@ -62,7 +101,7 @@ Item {
 
         // ---- Tab: concave corners on both sides, rounded bottom ----------
         ShapePath {
-            fillColor: (root.attachRight || root.attachLeft) ? "transparent" : root.color
+            fillColor: (root.attachRight || root.attachLeft) ? "transparent" : root.ringFill
             strokeColor: "transparent"
 
             startX: 0
@@ -109,17 +148,21 @@ Item {
 
         // ---- attachRight: flush with the right frame, concave foot -------
         ShapePath {
-            fillColor: root.attachRight ? root.color : "transparent"
+            fillColor: root.attachRight ? root.ringFill : "transparent"
             strokeColor: "transparent"
 
             startX: 0
             startY: 0
-            // Top edge along the bar, then straight down the frame to the tip of the foot.
+            // Top edge along the bar, then down the far (off-screen) edge of the
+            // bleed to the bottom of the body; with no bleed this is the frame edge.
             PathLine { x: root.width; y: 0 }
-            PathLine { x: root.width; y: root.height }
+            PathLine { x: root.width; y: root.bodyBottom }
+            // Back along the bottom of the bleed to the visual edge, then down to the tip of the foot.
+            PathLine { x: root.vw; y: root.seamRight }
+            PathLine { x: root.vw; y: root.height }
             // Concave foot: the bottom edge flares down into the frame.
             PathArc {
-                x: root.width - root.f
+                x: root.vw - root.f
                 y: root.bodyBottom
                 radiusX: root.f
                 radiusY: root.f
@@ -148,7 +191,7 @@ Item {
 
         // ---- attachLeft: flush with the left frame, concave foot ----------
         ShapePath {
-            fillColor: root.attachLeft ? root.color : "transparent"
+            fillColor: root.attachLeft ? root.ringFill : "transparent"
             strokeColor: "transparent"
 
             startX: 0
@@ -173,15 +216,19 @@ Item {
                 radiusY: root.r
                 direction: PathArc.Clockwise
             }
-            PathLine { x: root.f; y: root.bodyBottom }
+            PathLine { x: root.bl + root.f; y: root.bodyBottom }
             // Concave foot: the bottom edge flares down into the left frame.
             PathArc {
-                x: 0
+                x: root.bl
                 y: root.height
                 radiusX: root.f
                 radiusY: root.f
                 direction: PathArc.Counterclockwise
             }
+            // Up from the foot tip to the body bottom, then out along the bottom
+            // of the bleed to the far (off-screen) edge and back up to the bar.
+            PathLine { x: root.bl; y: root.bodyBottom }
+            PathLine { x: 0; y: root.seamLeft }
             PathLine { x: 0; y: 0 }
         }
     }
@@ -195,7 +242,7 @@ Item {
     // the bottom corners concentric with the surface's.
     Rectangle {
         id: inner
-        visible: root.innerMargin > 0
+        visible: root.innerMargin > 0 && !root.outlineOnly
         anchors.fill: body
         anchors.leftMargin: root.innerMargin
         anchors.rightMargin: root.innerMargin
@@ -209,9 +256,9 @@ Item {
     Item {
         id: body
 
-        x: root.attachLeft ? 0 : root.fillet
+        x: root.attachLeft ? root.bl : root.fillet
         y: root.topOverlap
-        width: root.width - root.fillet * ((root.attachRight || root.attachLeft) ? 1 : 2)
+        width: root.width - root.bl - root.fillet * ((root.attachRight || root.attachLeft) ? 1 : 2)
         height: root.height - root.topOverlap - root.foot
     }
 }

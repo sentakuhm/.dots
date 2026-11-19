@@ -50,6 +50,13 @@ Item {
     readonly property bool shouldBeActive: screenState.dashboard && Config.dashboard.enabled
     property real offsetScale: shouldBeActive ? 0 : 1
     property color surfaceColour: Colours.tPalette.m3surface
+    // True when the screen frame paints this panel's background (see ScreenFrame `bottomRing`).
+    property bool frameDrawsFill: false
+    // The whole content is scaled by this factor (shell.qml `bottomPanelScale`) to bring the
+    // panel down to the size of the bar popups. The panel is sized from the SCALED content, so
+    // its background, input mask and the frame-painted background all follow.
+    property real uiScale: 1
+    readonly property real cornerRadius: Math.round(Tokens.rounding.extraLarge * uiScale)
 
     // Upstream hangs the panel from the border (Config.border.thickness px) and
     // the tabs compensate for it, so keep that gap above the content.
@@ -59,8 +66,8 @@ Item {
     anchors.bottom: parent.bottom
     anchors.horizontalCenter: parent.horizontalCenter
     anchors.bottomMargin: (-implicitHeight - 5) * offsetScale
-    implicitWidth: (content.implicitWidth || 854) + fillet * 2 // 854: hard coded fallback for first open (as upstream)
-    implicitHeight: topPad + content.implicitHeight + foot
+    implicitWidth: Math.round((content.implicitWidth || 854) * uiScale) + fillet * 2 // 854: hard coded fallback for first open (as upstream)
+    implicitHeight: topPad + Math.round(content.implicitHeight * uiScale) + foot
     opacity: 1 - offsetScale
 
     Behavior on offsetScale {
@@ -75,7 +82,8 @@ Item {
         anchors.fill: parent
 
         color: root.surfaceColour
-        radius: Tokens.rounding.extraLarge
+        fillVisible: !root.frameDrawsFill
+        radius: root.cornerRadius
         fillet: root.fillet
         foot: root.foot
     }
@@ -86,6 +94,9 @@ Item {
         anchors.top: parent.top
         anchors.topMargin: root.topPad
         anchors.horizontalCenter: parent.horizontalCenter
+        // Scale about the top centre: stays centred and keeps its top edge.
+        scale: root.uiScale
+        transformOrigin: Item.Top
 
         active: root.shouldBeActive || root.visible
 

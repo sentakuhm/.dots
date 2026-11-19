@@ -21,6 +21,9 @@ Item {
     id: root
 
     property color color: "#1a1b26"
+    // false: paint nothing here. The screen frame paints this panel's background instead
+    // (see components/ScreenFrame.qml `cornerRing`), so it is exactly the colour of the frame.
+    property bool fillVisible: true
     // Radius of the convex top-left corner.
     property real radius: 25
     // Radius of the concave flares into the frame strips.
@@ -45,7 +48,7 @@ Item {
         preferredRendererType: Shape.CurveRenderer
 
         ShapePath {
-            fillColor: root.color
+            fillColor: root.fillVisible ? root.color : "transparent"
             strokeColor: "transparent"
 
             // Left foot tip (1 px inside the bottom frame).

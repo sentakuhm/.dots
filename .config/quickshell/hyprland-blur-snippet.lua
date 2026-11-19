@@ -16,12 +16,20 @@ hl.config({
     },
 })
 
+-- About `xray = true` (used on every rule below): the blur then only samples the wallpaper.
+-- The outer ring of the bar popups is painted by the screen frame (see ScreenFrame `rings`), so
+-- it is already the same colour as the bar; xray additionally keeps it (and the bar and frame)
+-- that colour when a window happens to sit behind it, instead of tinting it with that window.
+-- Trade-off: a popup no longer blurs a window behind it; it frosts the wallpaper instead.
+-- It is optional: drop the `xray` lines if you prefer the blur to see windows.
+
 -- Main bar + its anchored xdg popups (app launcher, calendar, power,
 -- notification center, and workspace preview).
 hl.layer_rule({
     name = "senta-bar-glass-blur",
     match = { namespace = "^senta-bar$" },
     blur = true,
+    xray = true,
     -- Frosts the anchored popups (calendar, power, apps, notifs, ws preview)
     -- including their outer frames. Verified on 0.57: this layer rule alone
     -- is enough; global decoration:blur:popups is not required.
@@ -34,6 +42,7 @@ hl.layer_rule({
     name = "senta-notifications-glass-blur",
     match = { namespace = "^senta-notifications$" },
     blur = true,
+    xray = true,
     ignore_alpha = 0.12,
 })
 
@@ -42,6 +51,7 @@ hl.layer_rule({
     name = "senta-frame-glass-blur",
     match = { namespace = "^senta-frame$" },
     blur = true,
+    xray = true,
     ignore_alpha = 0.12,
 })
 
@@ -52,6 +62,7 @@ hl.layer_rule({
     name = "senta-dashboard-glass-blur",
     match = { namespace = "^senta-dashboard$" },
     blur = true,
+    xray = true,
     ignore_alpha = 0.12,
 })
 
@@ -61,5 +72,6 @@ hl.layer_rule({
     name = "senta-utilities-glass-blur",
     match = { namespace = "^senta-utilities$" },
     blur = true,
+    xray = true,
     ignore_alpha = 0.12,
 })

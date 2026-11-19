@@ -14,8 +14,15 @@ Scope {
     required property var targetScreen
     property int frameThickness: 3
     property int fillet: 14
+    // The screen frame paints the panel's background (see ScreenFrame `bottomRing`).
+    property bool frameDrawsFill: false
+    // Scale of the panel content (1 = original size), see shell.qml `bottomPanelScale`.
+    property real uiScale: 1
 
     property var host: null
+    // Live description of where the panel is (null while the dashboard is not loaded);
+    // shell.qml hands it to the screen frame.
+    readonly property var ring: host ? host.ring : null
     readonly property bool available: host !== null
 
     signal opened
@@ -43,6 +50,8 @@ Scope {
         }
         obj.frameThickness = Qt.binding(() => root.frameThickness);
         obj.fillet = Qt.binding(() => root.fillet);
+        obj.frameDrawsFill = Qt.binding(() => root.frameDrawsFill);
+        obj.uiScale = Qt.binding(() => root.uiScale);
         obj.opened.connect(root.opened);
         root.host = obj;
     }

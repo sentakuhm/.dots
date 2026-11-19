@@ -35,14 +35,21 @@ Item {
     readonly property bool shouldBeActive: screenState.utilities && Config.utilities.enabled
     property real offsetScale: shouldBeActive ? 0 : 1
     property color surfaceColour: Colours.tPalette.m3surface
-    readonly property real pad: Tokens.padding.large
+    // True when the screen frame paints this panel's background (see ScreenFrame `cornerRing`).
+    property bool frameDrawsFill: false
+    // The whole content is scaled by this factor (shell.qml `bottomPanelScale`) to bring the
+    // panel down to the size of the bar popups. The panel is sized from the SCALED content, so
+    // its background, input mask and the frame-painted background all follow.
+    property real uiScale: 1
+    readonly property real cornerRadius: Math.round(Tokens.rounding.extraLarge * uiScale)
+    readonly property real pad: Math.round(Tokens.padding.large * uiScale)
 
     visible: offsetScale < 1
     anchors.bottom: parent.bottom
     anchors.right: parent.right
     anchors.bottomMargin: (-implicitHeight - 5) * offsetScale
-    implicitWidth: fillet + pad + Tokens.sizes.utilities.width + pad + frame
-    implicitHeight: fillet + pad + content.implicitHeight + pad + frame
+    implicitWidth: fillet + pad + Math.round(Tokens.sizes.utilities.width * uiScale) + pad + frame
+    implicitHeight: fillet + pad + Math.round(content.implicitHeight * uiScale) + pad + frame
     opacity: 1 - offsetScale
 
     Behavior on offsetScale {
@@ -57,7 +64,8 @@ Item {
         anchors.fill: parent
 
         color: root.surfaceColour
-        radius: Tokens.rounding.extraLarge
+        fillVisible: !root.frameDrawsFill
+        radius: root.cornerRadius
         fillet: root.fillet
         frame: root.frame
     }
@@ -67,6 +75,9 @@ Item {
 
         x: root.fillet + root.pad
         y: root.fillet + root.pad
+        // Scale about the top-left corner: keeps its position.
+        scale: root.uiScale
+        transformOrigin: Item.TopLeft
 
         active: root.shouldBeActive || root.visible
 

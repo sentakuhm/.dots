@@ -34,6 +34,25 @@ Scope {
     property int maxWidth: 560
     property int maxHeight: 720
 
+    // When true the screen frame paints this panel's background (see ScreenFrame `cornerRing`)
+    // so it is exactly the colour of the frame and the bar; the panel then paints none itself.
+    property bool frameDrawsFill: false
+    // Scale of the panel content (1 = original size); see shell.qml `bottomPanelScale`.
+    property real uiScale: 1
+    // Where the panel is right now, in screen coordinates, for the screen frame. Live: it
+    // follows the open / close animation. The window is docked to the bottom-right corner.
+    readonly property QtObject ring: QtObject {
+        readonly property bool active: root.frameDrawsFill && panel.visible
+        readonly property real x: root.targetScreen.width - win.width + panel.x
+        readonly property real y: root.targetScreen.height - win.height + panel.y
+        readonly property real w: panel.width
+        readonly property real h: panel.height
+        readonly property real o: panel.opacity
+        readonly property real radius: panel.cornerRadius
+        readonly property real fillet: panel.fillet
+        readonly property real frame: panel.frame
+    }
+
     readonly property alias screenState: screenStateObj
     readonly property bool isOpen: screenStateObj.utilities
     property bool pinned: false
@@ -196,6 +215,8 @@ Scope {
                 id: panel
 
                 screenState: root.screenState
+                frameDrawsFill: root.frameDrawsFill
+                uiScale: root.uiScale
                 fillet: root.fillet
                 frame: root.frameThickness
             }

@@ -32,6 +32,22 @@ ShellRoot {
     property int screenCornerRadius: 14   // inner corner radius of the frame (smaller = tighter into the corners)
     readonly property int popupRightInset: Math.max(0, frameThickness - 1)   // right-attached popups overlap the frame by 1 px
     readonly property int popupLeftInset: Math.max(0, frameThickness - 1)    // left-attached popups overlap the frame by 1 px
+    // Frame-attached popups (app launcher, power menu, notification center) are drawn this many px
+    // PAST the screen edge, underneath the frame, so there is never a sliver of wallpaper between a
+    // popup and the frame even if the compositor places the popup a pixel or two off. Off-screen, so
+    // it costs nothing; raise it if you still see a hairline, 0 gives the old behaviour.
+    property int popupEdgeBleed: 8
+    // The outer ring of every bar popup is painted by the screen frame (see ScreenFrame `rings`)
+    // instead of by the popup itself. A popup is drawn after the bar and frame, so the compositor
+    // blurs those dark neighbours into the popup's background and its ring comes out darker than
+    // the bar. The frame is drawn before the bar, so its rings match the bar exactly. Set to false
+    // to go back to each popup drawing its own ring. The same switch covers the bottom panels
+    // (dashboard, quick menu): the frame paints their whole background instead of them.
+    property bool frameDrawsPopupRings: true
+    // Size of the two bottom panels (dashboard, quick menu) relative to their original size: the
+    // whole content is scaled, so 0.7 brings them down to the size of the bar popups. 1 = original
+    // size; try 0.6 for smaller or 0.8 for larger.
+    property real bottomPanelScale: 0.7
     property real frameBorderWidth: 0      // 0 = flat frame, 1 = thin outline along the inner edge
     property bool showWindowTitle: true
     property bool showTray: true
@@ -439,6 +455,37 @@ ShellRoot {
             id: screenScope
             required property var modelData
 
+            // Outer rings of the bar popups that are open on this screen, handed to the screen
+            // frame, which paints them. Same geometry as the popup windows, in frame coordinates
+            // (the frame window starts at the bottom edge of the bar, popups start 1 px above it).
+            readonly property var popupRings: {
+                const out = [];
+                if (!root.frameDrawsPopupRings)
+                    return out;
+                const top = root.barVisible ? root.barHeight : 0;
+                const add = (popup, kind, x, bleed) => out.push({
+                    kind: kind,
+                    x: x,
+                    y: popup.anchor.rect.y - top,
+                    w: popup.width,
+                    h: popup.height,
+                    bleed: bleed,
+                    fillet: root.popupFillet
+                });
+                if (notificationsPopup.visible)
+                    add(notificationsPopup, "right", notificationsPopup.anchor.rect.x, root.popupRightInset + root.popupEdgeBleed);
+                if (powerPopup.visible)
+                    add(powerPopup, "right", powerPopup.anchor.rect.x, root.popupRightInset + root.popupEdgeBleed);
+                // The app launcher is anchored by its top-right corner (see appsPopup).
+                if (appsPopup.visible)
+                    add(appsPopup, "left", appsPopup.anchor.rect.x + 1 - appsPopup.width, root.popupLeftInset + root.popupEdgeBleed);
+                if (calendarPopup.visible)
+                    add(calendarPopup, "tab", calendarPopup.anchor.rect.x, 0);
+                if (wsPreviewPopup.visible)
+                    add(wsPreviewPopup, "tab", wsPreviewPopup.anchor.rect.x, 0);
+                return out;
+            }
+
             // Wallpaper: drawn by the shell on the bottom layer, behind the
             // frame, bar and panels (see components/WallpaperBackground.qml).
             WallpaperBackground {
@@ -456,6 +503,9 @@ ShellRoot {
                 thickness: root.frameThickness
                 radius: root.screenCornerRadius
                 frameColor: Theme.bg
+                rings: screenScope.popupRings
+                bottomRing: dashboardSlot.ring
+                cornerRing: utilitiesSlot.ring
             }
 
             // Toast stack: slides in from the right edge.
@@ -474,6 +524,8 @@ ShellRoot {
                 targetScreen: screenScope.modelData
                 frameThickness: root.frameThickness
                 fillet: root.popupFillet
+                frameDrawsFill: root.frameDrawsPopupRings   // the screen frame paints the panel background
+                uiScale: Math.max(0.4, Math.min(1.25, root.bottomPanelScale))
                 Component.onCompleted: root.dashboardSlots[screenScope.modelData.name] = dashboardSlot
                 Component.onDestruction: delete root.dashboardSlots[screenScope.modelData.name]
             }
@@ -487,6 +539,8 @@ ShellRoot {
                 notifStore: notifs
                 frameThickness: root.frameThickness
                 fillet: root.popupFillet
+                frameDrawsFill: root.frameDrawsPopupRings   // the screen frame paints the panel background
+                uiScale: Math.max(0.4, Math.min(1.25, root.bottomPanelScale))
                 primary: Quickshell.screens.length > 0 && Quickshell.screens[0].name === screenScope.modelData.name
                 Component.onCompleted: root.utilitiesSlots[screenScope.modelData.name] = utilitiesSlot
                 Component.onDestruction: delete root.utilitiesSlots[screenScope.modelData.name]
@@ -974,6 +1028,7 @@ ShellRoot {
 
                     PopupSurface {
                         anchors.fill: parent
+                        ringVisible: !root.frameDrawsPopupRings   // the screen frame paints the outer ring
                         fillet: root.popupFillet
                         color: Theme.bg               // dark outer frame, same colour as the bar
                         innerMargin: 8                // dashboard-style frame ring
@@ -1058,6 +1113,7 @@ ShellRoot {
 
                     PopupSurface {
                         anchors.fill: parent
+                        ringVisible: !root.frameDrawsPopupRings   // the screen frame paints the outer ring
                         fillet: root.popupFillet
                         color: Theme.bg               // dark outer frame, same colour as the bar
                         innerMargin: 8                // dashboard-style frame ring
@@ -1178,9 +1234,12 @@ ShellRoot {
                 PopupWindow {
                     id: notificationsPopup
                     anchor.window: barWindow
-                    anchor.rect.x: Math.max(8, barWindow.width - width - root.popupRightInset)
+                    // The window runs popupEdgeBleed px past the screen edge (see PopupSurface `bleed`);
+                    // no adjustment, so the compositor does not slide it back and re-open the seam.
+                    anchor.rect.x: Math.max(8, barWindow.width - width + root.popupEdgeBleed)
                     anchor.rect.y: barWindow.height - 1
-                    implicitWidth: 400 + root.popupFillet        // left fillet only: the right side meets the frame
+                    anchor.adjustment: PopupAdjustment.None
+                    implicitWidth: 400 + root.popupFillet + root.popupRightInset + root.popupEdgeBleed   // left fillet only: the right side meets the frame
                     implicitHeight: 520 + root.popupFillet       // + the concave foot into the frame
                     visible: root.notificationsOpen
                     grabFocus: true
@@ -1189,8 +1248,10 @@ ShellRoot {
 
                     PopupSurface {
                         anchors.fill: parent
+                        ringVisible: !root.frameDrawsPopupRings   // the screen frame paints the outer ring
                         fillet: root.popupFillet
                         attachRight: true
+                        bleed: root.popupRightInset + root.popupEdgeBleed
                         color: Theme.bg               // dark outer frame, same colour as the bar
                         innerMargin: 8                // dashboard-style frame ring
                         innerColor: Theme.popupBg     // lighter inner panel
@@ -1206,9 +1267,11 @@ ShellRoot {
                 PopupWindow {
                     id: powerPopup
                     anchor.window: barWindow
-                    anchor.rect.x: Math.max(8, barWindow.width - width - root.popupRightInset)
+                    // Same seamless-frame setup as the notification center above.
+                    anchor.rect.x: Math.max(8, barWindow.width - width + root.popupEdgeBleed)
                     anchor.rect.y: barWindow.height - 1
-                    implicitWidth: 224 + root.popupFillet        // left fillet only: the right side meets the frame
+                    anchor.adjustment: PopupAdjustment.None
+                    implicitWidth: 224 + root.popupFillet + root.popupRightInset + root.popupEdgeBleed   // left fillet only: the right side meets the frame
                     implicitHeight: 224 + root.popupFillet       // + the concave foot into the frame
                     visible: root.powerOpen
                     grabFocus: true
@@ -1217,8 +1280,10 @@ ShellRoot {
 
                     PopupSurface {
                         anchors.fill: parent
+                        ringVisible: !root.frameDrawsPopupRings   // the screen frame paints the outer ring
                         fillet: root.popupFillet
                         attachRight: true
+                        bleed: root.popupRightInset + root.popupEdgeBleed
                         color: Theme.bg               // dark outer frame, same colour as the bar
                         innerMargin: 8                // dashboard-style frame ring
                         innerColor: Theme.popupBg     // lighter inner panel
@@ -1280,11 +1345,18 @@ ShellRoot {
                 PopupWindow {
                     id: appsPopup
                     anchor.window: barWindow
-                    // Match the left frame edge; PopupSurface overlaps the bar
-                    // by one pixel so there is no seam or gap at the join.
-                    anchor.rect.x: root.popupLeftInset
+                    // PopupSurface overlaps the bar by one pixel so there is no seam
+                    // or gap at the join. On the left the window runs popupEdgeBleed px
+                    // past the screen edge (see PopupSurface `bleed`), so the popup is
+                    // anchored by its top-RIGHT corner and grows leftwards: that keeps the
+                    // anchor point inside the bar window. No adjustment, so the compositor
+                    // does not slide it back and re-open the seam.
+                    anchor.edges: Edges.Top | Edges.Right
+                    anchor.gravity: Edges.Bottom | Edges.Left
+                    anchor.rect.x: root.popupLeftInset + 420 + root.popupFillet - 1
                     anchor.rect.y: barWindow.height - 1
-                    implicitWidth: 420 + root.popupFillet
+                    anchor.adjustment: PopupAdjustment.None
+                    implicitWidth: 420 + root.popupFillet + root.popupLeftInset + root.popupEdgeBleed
                     implicitHeight: 1 + root.popupFillet + 28 + 40 + 10 + 18 + 10
                                    + (root.appsRows * 56 + (root.appsRows - 1) * 5) + 10 + 16
                     visible: root.appsOpen
@@ -1310,8 +1382,10 @@ ShellRoot {
 
                     PopupSurface {
                         anchors.fill: parent
+                        ringVisible: !root.frameDrawsPopupRings   // the screen frame paints the outer ring
                         fillet: root.popupFillet
                         attachLeft: true
+                        bleed: root.popupLeftInset + root.popupEdgeBleed
                         color: Theme.bg               // dark outer frame, same colour as the bar
                         innerMargin: 8                // dashboard-style frame ring
                         innerColor: Theme.popupBg     // lighter inner panel

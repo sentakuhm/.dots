@@ -4,7 +4,7 @@ import Quickshell.Wayland
 import "../Theme.js" as Theme
 
 // Floating notification toasts: one panel hangs from the bar
-// at the top-right (lifted popup colour, no gap, concave corner into the bar,
+// at the top-right (same colour as the bar, no gap, concave corner into the bar,
 // flush against the right frame) and the toasts stack inside it, newest on top,
 // sliding in from its right edge.
 // Hovering a toast pauses its timer, swiping it sideways hides it (it stays in
@@ -109,7 +109,7 @@ Scope {
 
             PopupSurface {
                 anchors.fill: parent
-                color: Theme.popupBg
+                color: Theme.bg               // same colour as the bar, like every other popup
                 fillet: root.fillet
                 topOverlap: root.overlap
                 attachRight: true

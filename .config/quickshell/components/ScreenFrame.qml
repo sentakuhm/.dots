@@ -2,6 +2,9 @@ import QtQuick
 import QtQuick.Shapes
 import Quickshell
 import Quickshell.Wayland
+// BottomSurface / CornerSurface: the shapes of the dashboard and quick menu panels (pure QtQuick,
+// no Sentaku plugin needed, so this import is safe even when the dashboard is not installed).
+import "../modules/sentadash"
 
 // Screen frame, adapted for a TOP bar.
 //
@@ -21,6 +24,16 @@ import Quickshell.Wayland
 //                          side zones.
 // - Outline (optional)   : set `borderWidth` > 0 for a thin line along the whole
 //                          inner edge. Off by default (flat, seamless look).
+// - Popup rings          : the outer ring of every open bar popup (`rings`) is
+//                          painted here, as part of the frame's own glass layer,
+//                          instead of by the popup window. A popup is drawn after
+//                          the bar and frame, so the compositor blurs those dark
+//                          neighbours into its background and its ring comes out
+//                          darker than the bar. This window is drawn before the
+//                          bar, so a ring painted here is exactly the colour of
+//                          the frame and the bar. The backgrounds of the two
+//                          bottom panels (dashboard, quick menu) are painted here
+//                          the same way (`bottomRing`, `cornerRing`).
 Scope {
     id: root
 
@@ -35,6 +48,20 @@ Scope {
     property color frameColor: "#1a1b26"
     property color borderColor: "#3b4261"
     property real borderWidth: 0     // 0 = flat frame (default); 1 = thin outline along the inner edge
+    // Outer rings of open bar popups, painted as part of the frame. A list of
+    //   { kind: "right" | "left" | "tab", x, y, w, h, bleed, fillet }
+    // in this window's coordinates (y = 0 is the bottom edge of the bar). The
+    // geometry is exactly the one of the popup window that owns the ring.
+    property var rings: []
+    // Backgrounds of the two bottom panels, painted here for the same reason. Each is a live
+    // object published by the panel's host (null when that panel is not loaded):
+    //   { active, x, y, w, h, o (opacity), radius, fillet, foot | frame }
+    // in SCREEN coordinates; see modules/sentadash/DashboardHost.qml / UtilitiesHost.qml.
+    property var bottomRing: null
+    property var cornerRing: null
+    // Opaque version of frameColor: the glass translucency is applied once, to
+    // the whole frame + rings group, so shapes that overlap never double up.
+    readonly property color solidColor: Qt.rgba(frameColor.r, frameColor.g, frameColor.b, 1)
 
     PanelWindow {
         id: frame
@@ -75,61 +102,133 @@ Scope {
             intersection: Intersection.Xor
         }
 
+        // The frame ring and the popup rings are painted opaque into one group
+        // and the frame's translucency is applied once to the whole group, so
+        // wherever a popup ring overlaps the frame the result is still a single
+        // layer of glass (never two stacked, which would look darker). The
+        // offscreen layer is only needed while a ring is present; with none the
+        // frame renders exactly as before.
+        Item {
+            id: glass
+            anchors.fill: parent
+            opacity: root.frameColor.a
+            layer.enabled: root.rings.length > 0 || bottomPanel.visible || cornerPanel.visible
+
+            Shape {
+                anchors.fill: parent
+                preferredRendererType: Shape.CurveRenderer
+
+                ShapePath {
+                    fillColor: root.solidColor
+                    strokeColor: "transparent"
+                    fillRule: ShapePath.OddEvenFill
+
+                    // Outer rectangle (the whole window).
+                    startX: 0
+                    startY: 0
+                    PathLine { x: frame.width; y: 0 }
+                    PathLine { x: frame.width; y: frame.height }
+                    PathLine { x: 0; y: frame.height }
+                    PathLine { x: 0; y: 0 }
+
+                    // Inner rounded rectangle = the hole (odd-even fill cuts it out).
+                    PathMove { x: frame.holeX + frame.r; y: frame.holeY }
+                    PathLine { x: frame.holeX + frame.holeW - frame.r; y: frame.holeY }
+                    PathArc {
+                        x: frame.holeX + frame.holeW
+                        y: frame.holeY + frame.r
+                        radiusX: frame.r
+                        radiusY: frame.r
+                        direction: PathArc.Clockwise
+                    }
+                    PathLine { x: frame.holeX + frame.holeW; y: frame.holeY + frame.holeH - frame.r }
+                    PathArc {
+                        x: frame.holeX + frame.holeW - frame.r
+                        y: frame.holeY + frame.holeH
+                        radiusX: frame.r
+                        radiusY: frame.r
+                        direction: PathArc.Clockwise
+                    }
+                    PathLine { x: frame.holeX + frame.r; y: frame.holeY + frame.holeH }
+                    PathArc {
+                        x: frame.holeX
+                        y: frame.holeY + frame.holeH - frame.r
+                        radiusX: frame.r
+                        radiusY: frame.r
+                        direction: PathArc.Clockwise
+                    }
+                    PathLine { x: frame.holeX; y: frame.holeY + frame.r }
+                    PathArc {
+                        x: frame.holeX + frame.r
+                        y: frame.holeY
+                        radiusX: frame.r
+                        radiusY: frame.r
+                        direction: PathArc.Clockwise
+                    }
+                }
+            }
+
+            // Popup rings: the same component the popups use, outline only, so
+            // the outline is identical to the popup's own. Opaque here; the
+            // group's opacity makes it glass.
+            Repeater {
+                model: root.rings
+                delegate: PopupSurface {
+                    required property var modelData
+                    outlineOnly: true
+                    x: modelData.x
+                    y: modelData.y
+                    width: modelData.w
+                    height: modelData.h
+                    color: root.solidColor
+                    attachRight: modelData.kind === "right"
+                    attachLeft: modelData.kind === "left"
+                    bleed: modelData.bleed
+                    fillet: modelData.fillet
+                }
+            }
+
+            // Dashboard background (rises from the bottom edge). Opaque here, like the rings; its
+            // opacity follows the panel's open / close fade.
+            BottomSurface {
+                id: bottomPanel
+                readonly property var ring: root.bottomRing
+                visible: !!ring && ring.active
+                x: ring ? ring.x : 0
+                y: ring ? ring.y - root.barHeight : 0
+                width: ring ? ring.w : 0
+                height: ring ? ring.h : 0
+                opacity: ring ? ring.o : 1
+                color: root.solidColor
+                radius: ring ? ring.radius : 25
+                fillet: ring ? ring.fillet : 14
+                foot: ring ? ring.foot : 3
+            }
+
+            // Quick menu background (docked in the bottom-right corner).
+            CornerSurface {
+                id: cornerPanel
+                readonly property var ring: root.cornerRing
+                visible: !!ring && ring.active
+                x: ring ? ring.x : 0
+                y: ring ? ring.y - root.barHeight : 0
+                width: ring ? ring.w : 0
+                height: ring ? ring.h : 0
+                opacity: ring ? ring.o : 1
+                color: root.solidColor
+                radius: ring ? ring.radius : 25
+                fillet: ring ? ring.fillet : 14
+                frame: ring ? ring.frame : 3
+            }
+        }
+
+        // Thin outline along the inner edge, inset by half its width so it
+        // is never clipped at the window border. Outside the glass group so its
+        // colour is not dimmed by the frame's translucency.
         Shape {
             anchors.fill: parent
             preferredRendererType: Shape.CurveRenderer
 
-            ShapePath {
-                fillColor: root.frameColor
-                strokeColor: "transparent"
-                fillRule: ShapePath.OddEvenFill
-
-                // Outer rectangle (the whole window).
-                startX: 0
-                startY: 0
-                PathLine { x: frame.width; y: 0 }
-                PathLine { x: frame.width; y: frame.height }
-                PathLine { x: 0; y: frame.height }
-                PathLine { x: 0; y: 0 }
-
-                // Inner rounded rectangle = the hole (odd-even fill cuts it out).
-                PathMove { x: frame.holeX + frame.r; y: frame.holeY }
-                PathLine { x: frame.holeX + frame.holeW - frame.r; y: frame.holeY }
-                PathArc {
-                    x: frame.holeX + frame.holeW
-                    y: frame.holeY + frame.r
-                    radiusX: frame.r
-                    radiusY: frame.r
-                    direction: PathArc.Clockwise
-                }
-                PathLine { x: frame.holeX + frame.holeW; y: frame.holeY + frame.holeH - frame.r }
-                PathArc {
-                    x: frame.holeX + frame.holeW - frame.r
-                    y: frame.holeY + frame.holeH
-                    radiusX: frame.r
-                    radiusY: frame.r
-                    direction: PathArc.Clockwise
-                }
-                PathLine { x: frame.holeX + frame.r; y: frame.holeY + frame.holeH }
-                PathArc {
-                    x: frame.holeX
-                    y: frame.holeY + frame.holeH - frame.r
-                    radiusX: frame.r
-                    radiusY: frame.r
-                    direction: PathArc.Clockwise
-                }
-                PathLine { x: frame.holeX; y: frame.holeY + frame.r }
-                PathArc {
-                    x: frame.holeX + frame.r
-                    y: frame.holeY
-                    radiusX: frame.r
-                    radiusY: frame.r
-                    direction: PathArc.Clockwise
-                }
-            }
-
-            // Thin outline along the inner edge, inset by half its width so it
-            // is never clipped at the window border.
             ShapePath {
                 id: outline
                 readonly property real i: root.borderWidth / 2
