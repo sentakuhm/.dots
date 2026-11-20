@@ -29,7 +29,7 @@ hl.bind("CTRL + ALT + L", hl.dsp.exec_cmd("hyprlock"))
 -- Clipboard manager in a small floating kitty
 hl.bind(
 	mainMod .. " + V",
-	hl.dsp.exec_cmd("foot --class floating -e fish -c 'clipse'", { float = true, center = true, size = { 450, 590 } })
+	hl.dsp.exec_cmd("kitty --class floating -e fish -c 'clipse'", { float = true, center = true, size = { 450, 590 } })
 )
 
 hl.bind(mainMod .. " + Escape", hl.dsp.exec_cmd("hyprctl kill"))

@@ -39,6 +39,12 @@ Scope {
     property bool frameDrawsFill: false
     // Scale of the panel content (1 = original size); see shell.qml `bottomPanelScale`.
     property real uiScale: 1
+    // The Mando settings window (opened from this menu) is scaled by the same factor.
+    Binding {
+        target: WindowFactory
+        property: "uiScale"
+        value: root.uiScale
+    }
     // Where the panel is right now, in screen coordinates, for the screen frame. Live: it
     // follows the open / close animation. The window is docked to the bottom-right corner.
     readonly property QtObject ring: QtObject {

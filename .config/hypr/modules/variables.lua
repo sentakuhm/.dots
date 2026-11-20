@@ -5,7 +5,7 @@
 -- Keep program names in one module instead of duplicating globals in keybinds.lua.
 return {
 	main_mod = "SUPER",
-	terminal = "ghostty",
+	terminal = "kitty",
 	file_manager = "dolphin",
 	launcher = "hyprlauncher",
 	browser = "firefox",

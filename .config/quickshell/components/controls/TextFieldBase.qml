@@ -15,8 +15,18 @@ TextField {
     selectionColor: Qt.alpha(Colours.palette.m3primary, 0.4)
     selectedTextColor: color
 
+    // Native text is rasterised at its unscaled size and goes soft inside a scaled item (the quick
+    // menu, dashboard and Mando settings are scaled down), so use scalable rendering there.
+    property bool inScaledItem: false
+    Component.onCompleted: {
+        let s = 1;
+        for (let p = root.parent; p; p = p.parent)
+            s *= p.scale;
+        inScaledItem = Math.abs(s - 1) > 0.01;
+    }
+
     font: Tokens.font.body.small
-    renderType: echoMode === TextField.Password ? TextField.QtRendering : TextField.NativeRendering
+    renderType: inScaledItem || echoMode === TextField.Password ? TextField.QtRendering : TextField.NativeRendering
     cursorVisible: !readOnly
     verticalAlignment: TextInput.AlignVCenter
 

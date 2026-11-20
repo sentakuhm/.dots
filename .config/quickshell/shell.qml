@@ -44,9 +44,10 @@ ShellRoot {
     // to go back to each popup drawing its own ring. The same switch covers the bottom panels
     // (dashboard, quick menu): the frame paints their whole background instead of them.
     property bool frameDrawsPopupRings: true
-    // Size of the two bottom panels (dashboard, quick menu) relative to their original size: the
-    // whole content is scaled, so 0.7 brings them down to the size of the bar popups. 1 = original
-    // size; try 0.6 for smaller or 0.8 for larger.
+    // Size of the two bottom panels (dashboard, quick menu) and of the Mando settings window
+    // relative to their original size: the whole content is scaled, so 0.7 brings them down to
+    // the size of the bar popups. 1 = original size; try 0.6 for smaller or 0.8 for larger.
+    // (Mando follows this through the quick menu, see UtilitiesHost.)
     property real bottomPanelScale: 0.7
     property real frameBorderWidth: 0      // 0 = flat frame, 1 = thin outline along the inner edge
     property bool showWindowTitle: true

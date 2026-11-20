@@ -106,7 +106,7 @@ hl.window_rule({
 
 -- class_rule("firefox",                { opacity = "0.97 0.97" })
 -- class_rule("org.mozilla.Thunderbird", { opacity = "0.97 0.97" })
-class_rule("ghostty", { opacity = "0.90 0.90" })
+class_rule("kitty", { opacity = "0.90 0.90" })
 class_rule("foot", { opacity = "0.90 0.90" })
 class_rule("hyprpolkitagent", { opacity = "0.90 0.90" })
 class_rule("org.kde.kate", { opacity = "0.90 0.90" })
